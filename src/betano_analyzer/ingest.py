@@ -5,14 +5,8 @@ from typing import Iterable
 
 
 SUPPORTED_COMPETITIONS = {
-    "premier league",
-    "la liga",
-    "serie a",
-    "bundesliga",
-    "ligue 1",
-    "champions league",
-    "europa league",
-    "liga 1 peru",
+    "premier league", "la liga", "serie a", "bundesliga", "ligue 1",
+    "champions league", "europa league", "liga 1 peru",
 }
 
 
@@ -39,14 +33,10 @@ class NormalizedOdd:
 def normalize_competition(value: str) -> str:
     text = " ".join(value.strip().lower().split())
     aliases = {
-        "epl": "premier league",
-        "english premier league": "premier league",
-        "laliga": "la liga",
-        "la liga santander": "la liga",
-        "serie a italy": "serie a",
-        "uefa champions league": "champions league",
-        "uefa europa league": "europa league",
-        "peruvian liga 1": "liga 1 peru",
+        "epl": "premier league", "english premier league": "premier league",
+        "laliga": "la liga", "la liga santander": "la liga",
+        "serie a italy": "serie a", "uefa champions league": "champions league",
+        "uefa europa league": "europa league", "peruvian liga 1": "liga 1 peru",
         "liga 1": "liga 1 peru",
     }
     return aliases.get(text, text)
@@ -60,14 +50,9 @@ def normalize_market(market: str, selection: str) -> tuple[str, str]:
     m = " ".join(market.strip().lower().split())
     s = " ".join(selection.strip().lower().split())
     aliases = {
-        "match winner": "1x2",
-        "moneyline": "1x2",
-        "ml": "1x2",
-        "double chance": "double_chance",
-        "total goals": "goals",
-        "totals": "goals",
-        "over/under": "goals",
-        "total corners": "corners",
+        "match winner": "1x2", "moneyline": "1x2", "ml": "1x2",
+        "double chance": "double_chance", "total goals": "goals",
+        "totals": "goals", "over/under": "goals", "total corners": "corners",
         "both teams to score": "btts",
     }
     return aliases.get(m, m), s
