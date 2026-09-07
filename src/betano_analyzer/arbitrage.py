@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from collections import defaultdict
+from datetime import datetime, timezone
 import re
 
 from .db import connect
@@ -22,20 +23,14 @@ class Arbitrage:
 
 
 def _normalise_bookmaker(value: str) -> str:
-    """Normalise bookmaker names while preserving the country suffix.
-
-    Examples: ``Betano.pe`` -> ``betano pe`` and ``Bet365 PE`` ->
-    ``bet365 pe``. This prevents a regional bookmaker from being confused
-    with a generic/global feed.
-    """
+    """Normalise bookmaker names while preserving the country suffix."""
     return re.sub(r"[^a-z0-9]+", " ", value.strip().lower()).strip()
 
 
 def _is_allowed_bookmaker(name: str, allowed: set[str] | None) -> bool:
     if allowed is None:
         return True
-    normalised = _normalise_bookmaker(name)
-    return any(alias == normalised for alias in allowed)
+    return _normalise_bookmaker(name) in allowed
 
 
 def _required_outcomes(market: str) -> set[str] | None:
@@ -50,20 +45,30 @@ def _required_outcomes(market: str) -> set[str] | None:
     return None
 
 
+def _parse_captured(value: str) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
 def find_arbitrage(
     limit: int = 100,
     bookmakers: list[str] | None = None,
     total_stake: float = 100.0,
+    max_age_seconds: int | None = None,
 ) -> list[Arbitrage]:
     """Find mathematical arbitrage opportunities from stored odds.
 
-    When ``bookmakers`` is supplied, every selected outcome must come from one
-    of those exact bookmaker identifiers. The bookmaker itself may be reused
-    across outcomes; this is valid for a mathematical surebet and is important
-    for 1X2 markets when only two houses are being compared.
+    ``bookmakers`` is matched exactly after normalisation, so a generic
+    ``bet365`` feed cannot be mistaken for ``Bet365.pe``. ``max_age_seconds``
+    optionally rejects stale quotes, which is useful for live betting.
     """
     if total_stake <= 0:
         raise ValueError("total_stake debe ser mayor que 0")
+    if max_age_seconds is not None and max_age_seconds < 0:
+        raise ValueError("max_age_seconds no puede ser negativo")
 
     allowed = None
     if bookmakers:
@@ -74,16 +79,22 @@ def find_arbitrage(
     with connect() as db:
         rows = db.execute(
             """SELECT o.match_id,o.bookmaker,o.market,o.selection,o.line,o.odds,
-                      m.home_team,m.away_team
+                      o.captured_at,m.home_team,m.away_team
                FROM odds o JOIN matches m ON m.id=o.match_id
                WHERE o.odds > 1
                ORDER BY o.captured_at DESC"""
         ).fetchall()
 
+    now = datetime.now(timezone.utc)
     groups = defaultdict(list)
     for row in rows:
-        if _is_allowed_bookmaker(row["bookmaker"], allowed):
-            groups[(row["match_id"], row["market"], row["line"])].append(row)
+        if not _is_allowed_bookmaker(row["bookmaker"], allowed):
+            continue
+        if max_age_seconds is not None:
+            captured = _parse_captured(row["captured_at"])
+            if captured is None or (now - captured).total_seconds() > max_age_seconds:
+                continue
+        groups[(row["match_id"], row["market"], row["line"])].append(row)
 
     result: list[Arbitrage] = []
     for (match_id, market, line), quotes in groups.items():
@@ -91,12 +102,20 @@ def find_arbitrage(
         if not required:
             continue
 
-        # Keep the best quote per outcome/bookmaker.
-        by_outcome: dict[str, dict[str, tuple[str, float]]] = defaultdict(dict)
+        # Keep only the newest quote for each bookmaker/outcome/line. This
+        # prevents a stale historical price being paired with a fresh price.
+        latest: dict[tuple[str, str], object] = {}
         for row in quotes:
             outcome = row["selection"].split(":", 1)[-1].strip().lower()
             if outcome not in required:
                 continue
+            key = (_normalise_bookmaker(row["bookmaker"]), outcome)
+            if key not in latest:
+                latest[key] = row
+
+        by_outcome: dict[str, dict[str, tuple[str, float]]] = defaultdict(dict)
+        for row in latest.values():
+            outcome = row["selection"].split(":", 1)[-1].strip().lower()
             bookmaker = row["bookmaker"]
             price = float(row["odds"])
             key = _normalise_bookmaker(bookmaker)
@@ -107,13 +126,10 @@ def find_arbitrage(
         if not all(outcome in by_outcome for outcome in required):
             continue
 
-        # Pick the best available price for each outcome. A bookmaker can be
-        # used for more than one outcome; the mathematical condition is that
-        # the reciprocal odds sum to less than 1.
-        selected: dict[str, tuple[str, float]] = {}
-        for outcome in required:
-            selected[outcome] = max(by_outcome[outcome].values(), key=lambda quote: quote[1])
-
+        selected = {
+            outcome: max(by_outcome[outcome].values(), key=lambda quote: quote[1])
+            for outcome in required
+        }
         implied_sum = sum(1.0 / quote[1] for quote in selected.values())
         if implied_sum >= 1.0:
             continue
@@ -124,11 +140,15 @@ def find_arbitrage(
             outcome: total_stake * (1.0 / quote[1]) / implied_sum
             for outcome, quote in selected.items()
         }
+        rounded = {outcome: round(stake, 2) for outcome, stake in raw_stakes.items()}
+        if rounded:
+            first = next(iter(rounded))
+            rounded[first] = round(total_stake - sum(v for k, v in rounded.items() if k != first), 2)
         outcomes = {
             outcome: {
                 "bookmaker": quote[0],
                 "odds": quote[1],
-                "stake": round(raw_stakes[outcome], 2),
+                "stake": rounded[outcome],
             }
             for outcome, quote in selected.items()
         }
