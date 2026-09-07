@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Iterable
 
 from .db import connect
 from .ingest import NormalizedMatch, NormalizedOdd, filter_competitions, normalize_competition, normalize_market
@@ -39,7 +39,7 @@ def save_odds(odds: Iterable[NormalizedOdd]) -> tuple[int, int]:
             if not match or odd.odds <= 1:
                 continue
             market, selection = normalize_market(odd.market, odd.selection)
-            db.execute("INSERT INTO odds(match_id,bookmaker,market,selection,odds,captured_at) VALUES(?,?,?,?,?,?)", (match["id"], odd.bookmaker, market, selection, odd.odds, odd.captured_at))
+            db.execute("INSERT INTO odds(match_id,bookmaker,market,selection,odds,captured_at,line) VALUES(?,?,?,?,?,?,?)", (match["id"], odd.bookmaker, market, selection, odd.odds, odd.captured_at, odd.line))
             saved += 1
     return len(items), saved
 
