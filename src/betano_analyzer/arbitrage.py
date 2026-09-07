@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from collections import defaultdict
+import re
 
 from .db import connect
 
@@ -21,14 +22,20 @@ class Arbitrage:
 
 
 def _normalise_bookmaker(value: str) -> str:
-    return " ".join(value.strip().lower().replace("_", " ").split())
+    """Normalise bookmaker names while preserving the country suffix.
+
+    Examples: ``Betano.pe`` -> ``betano pe`` and ``Bet365 PE`` ->
+    ``bet365 pe``. This prevents a regional bookmaker from being confused
+    with a generic/global feed.
+    """
+    return re.sub(r"[^a-z0-9]+", " ", value.strip().lower()).strip()
 
 
 def _is_allowed_bookmaker(name: str, allowed: set[str] | None) -> bool:
     if allowed is None:
         return True
     normalised = _normalise_bookmaker(name)
-    return any(alias in normalised for alias in allowed)
+    return any(alias == normalised for alias in allowed)
 
 
 def _required_outcomes(market: str) -> set[str] | None:
@@ -48,11 +55,12 @@ def find_arbitrage(
     bookmakers: list[str] | None = None,
     total_stake: float = 100.0,
 ) -> list[Arbitrage]:
-    """Find mathematical arbitrage opportunities from the latest stored odds.
+    """Find mathematical arbitrage opportunities from stored odds.
 
     When ``bookmakers`` is supplied, every selected outcome must come from one
-    of those bookmakers and the same bookmaker is not reused for two outcomes.
-    This is useful for the initial Betano PE + Apuesta Total setup.
+    of those exact bookmaker identifiers. The bookmaker itself may be reused
+    across outcomes; this is valid for a mathematical surebet and is important
+    for 1X2 markets when only two houses are being compared.
     """
     if total_stake <= 0:
         raise ValueError("total_stake debe ser mayor que 0")
@@ -83,8 +91,7 @@ def find_arbitrage(
         if not required:
             continue
 
-        # Keep the best quote per outcome/bookmaker, then enumerate the small
-        # set of bookmaker assignments so outcomes use distinct houses.
+        # Keep the best quote per outcome/bookmaker.
         by_outcome: dict[str, dict[str, tuple[str, float]]] = defaultdict(dict)
         for row in quotes:
             outcome = row["selection"].split(":", 1)[-1].strip().lower()
@@ -100,53 +107,46 @@ def find_arbitrage(
         if not all(outcome in by_outcome for outcome in required):
             continue
 
-        assignments: list[dict[str, tuple[str, float]]] = [{}]
-        for outcome in sorted(required):
-            next_assignments = []
-            for assignment in assignments:
-                used = {_normalise_bookmaker(v[0]) for v in assignment.values()}
-                for bookmaker_key, quote in by_outcome[outcome].items():
-                    if bookmaker_key in used:
-                        continue
-                    next_assignments.append({**assignment, outcome: quote})
-            assignments = next_assignments
-            if not assignments:
-                break
+        # Pick the best available price for each outcome. A bookmaker can be
+        # used for more than one outcome; the mathematical condition is that
+        # the reciprocal odds sum to less than 1.
+        selected: dict[str, tuple[str, float]] = {}
+        for outcome in required:
+            selected[outcome] = max(by_outcome[outcome].values(), key=lambda quote: quote[1])
 
-        for selected in assignments:
-            implied_sum = sum(1.0 / quote[1] for quote in selected.values())
-            if implied_sum >= 1.0:
-                continue
+        implied_sum = sum(1.0 / quote[1] for quote in selected.values())
+        if implied_sum >= 1.0:
+            continue
 
-            guaranteed_return = total_stake / implied_sum
-            guaranteed_profit = guaranteed_return - total_stake
-            stakes = {
-                outcome: total_stake * (1.0 / quote[1]) / implied_sum
-                for outcome, quote in selected.items()
+        guaranteed_return = total_stake / implied_sum
+        guaranteed_profit = guaranteed_return - total_stake
+        raw_stakes = {
+            outcome: total_stake * (1.0 / quote[1]) / implied_sum
+            for outcome, quote in selected.items()
+        }
+        outcomes = {
+            outcome: {
+                "bookmaker": quote[0],
+                "odds": quote[1],
+                "stake": round(raw_stakes[outcome], 2),
             }
-            outcomes = {
-                outcome: {
-                    "bookmaker": quote[0],
-                    "odds": quote[1],
-                    "stake": round(stakes[outcome], 2),
-                }
-                for outcome, quote in selected.items()
-            }
-            result.append(
-                Arbitrage(
-                    match_id=match_id,
-                    match=f"{quotes[0]['home_team']} vs {quotes[0]['away_team']}",
-                    market=market,
-                    line=line,
-                    outcomes=outcomes,
-                    implied_sum=implied_sum,
-                    profit_margin=(1.0 / implied_sum) - 1.0,
-                    total_stake=total_stake,
-                    guaranteed_return=guaranteed_return,
-                    guaranteed_profit=guaranteed_profit,
-                )
+            for outcome, quote in selected.items()
+        }
+        result.append(
+            Arbitrage(
+                match_id=match_id,
+                match=f"{quotes[0]['home_team']} vs {quotes[0]['away_team']}",
+                market=market,
+                line=line,
+                outcomes=outcomes,
+                implied_sum=implied_sum,
+                profit_margin=(1.0 / implied_sum) - 1.0,
+                total_stake=total_stake,
+                guaranteed_return=guaranteed_return,
+                guaranteed_profit=guaranteed_profit,
             )
-            if len(result) >= limit:
-                return result
+        )
+        if len(result) >= limit:
+            return result
 
     return result
