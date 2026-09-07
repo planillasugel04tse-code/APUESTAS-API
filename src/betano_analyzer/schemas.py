@@ -12,6 +12,14 @@ class MatchCreate(BaseModel):
     status: str = "scheduled"
 
 
+class TipsterCreate(BaseModel):
+    name: str
+    source: str | None = None
+    country: str | None = None
+    language: str | None = None
+    active: bool = True
+
+
 class PickCreate(BaseModel):
     match_id: int
     tipster_id: int | None = None
@@ -24,6 +32,15 @@ class PickCreate(BaseModel):
     confidence: float | None = Field(default=None, ge=0, le=1)
 
 
+class OddsCreate(BaseModel):
+    match_id: int
+    bookmaker: str
+    market: str
+    selection: str
+    odds: float = Field(gt=1)
+    captured_at: str | None = None
+
+
 class BetCreate(BaseModel):
     match_id: int
     pick_id: int | None = None
@@ -33,3 +50,9 @@ class BetCreate(BaseModel):
     result: str = "pending"
     cashout: float | None = Field(default=None, ge=0)
     placed_at: str
+
+
+class BetSettle(BaseModel):
+    result: str = Field(pattern="^(won|lost|pending|push|cashout)$")
+    cashout: float | None = Field(default=None, ge=0)
+    settled_at: str | None = None
