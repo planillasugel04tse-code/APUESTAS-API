@@ -20,13 +20,29 @@ class ProviderConfig:
         return bool(self.enabled and self.base_url and self.api_key_env and os.getenv(self.api_key_env))
 
 
-def _enabled(env_name: str) -> bool:
-    return os.getenv(env_name, "0").strip().lower() in {"1", "true", "yes", "on"}
+def _enabled(env_name: str, key_env: str | None = None) -> bool:
+    """Enable explicitly, or automatically when the provider key exists."""
+    explicit = os.getenv(env_name)
+    if explicit is not None:
+        return explicit.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(key_env and os.getenv(key_env))
 
 
 DEFAULT_PROVIDERS = (
-    ProviderConfig("odds-api-io", "odds", os.getenv("ODDS_API_IO_BASE_URL", "https://api.odds-api.io"), "ODDS_API_IO_KEY", _enabled("ODDS_API_IO_ENABLED")),
-    ProviderConfig("oddspapi", "odds", os.getenv("ODDSPAPI_BASE_URL", "https://api.oddspapi.com"), "ODDSPAPI_KEY", _enabled("ODDSPAPI_ENABLED")),
+    ProviderConfig(
+        "odds-api-io",
+        "odds",
+        os.getenv("ODDS_API_IO_BASE_URL", "https://api.odds-api.io"),
+        "ODDS_API_IO_KEY",
+        _enabled("ODDS_API_IO_ENABLED", "ODDS_API_IO_KEY"),
+    ),
+    ProviderConfig(
+        "oddspapi",
+        "odds",
+        os.getenv("ODDSPAPI_BASE_URL", "https://api.oddspapi.com"),
+        "ODDSPAPI_KEY",
+        _enabled("ODDSPAPI_ENABLED", "ODDSPAPI_KEY"),
+    ),
 )
 
 
@@ -64,7 +80,7 @@ async def fetch_json(
         )
     key = os.environ[provider.api_key_env]
     query = dict(params or {})
-    # Odds-API.io v3 authenticates with apiKey in the query string.
+    # OddsPapi authenticates with the API key in the query string.
     query.setdefault("apiKey", key)
     url = provider.base_url.rstrip("/") + "/" + path.lstrip("/")
     async with httpx.AsyncClient(timeout=timeout) as client:
