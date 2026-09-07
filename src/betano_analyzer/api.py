@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query
 
 from .dashboard import Period, period_range
 from .db import connect
+from .market_performance import performance_by_competition_market
 from .providers import provider_status
 from .radar import build_radar
 from .schemas import BetCreate, BetSettle, MatchCreate, OddsCreate, PickCreate, PickResultCreate, TipsterCreate
@@ -67,10 +68,8 @@ def settle_pick(pick_id: int, data: PickResultCreate):
     with connect() as db:
         if not db.execute("SELECT id FROM picks WHERE id = ?", (pick_id,)).fetchone():
             raise HTTPException(status_code=404, detail="Pick no encontrado")
-        db.execute("""INSERT INTO pick_results(pick_id,result,settled_at,actual_odds,notes)
-                     VALUES(?,?,?,?,?)
-                     ON CONFLICT(pick_id) DO UPDATE SET result=excluded.result, settled_at=excluded.settled_at, actual_odds=excluded.actual_odds, notes=excluded.notes""",
-                   (pick_id, data.result, settled_at, data.actual_odds, data.notes))
+        db.execute("""INSERT INTO pick_results(pick_id,result,settled_at,actual_odds,notes) VALUES(?,?,?,?,?)
+                     ON CONFLICT(pick_id) DO UPDATE SET result=excluded.result, settled_at=excluded.settled_at, actual_odds=excluded.actual_odds, notes=excluded.notes""", (pick_id, data.result, settled_at, data.actual_odds, data.notes))
         return dict(db.execute("SELECT * FROM pick_results WHERE pick_id = ?", (pick_id,)).fetchone())
 
 
@@ -79,65 +78,43 @@ def tipsters_performance(period: Period = Query(default=Period.TODOS), market: s
     start, end = date_filters(period)
     params: list[object] = []
     clauses = ["pr.result IN ('won','lost','push')"]
-    if start:
-        clauses.append("date(pr.settled_at) >= date(?)")
-        params.append(start)
-    if end:
-        clauses.append("date(pr.settled_at) <= date(?)")
-        params.append(end)
-    if market:
-        clauses.append("LOWER(COALESCE(p.conservative_market,p.original_market)) = LOWER(?)")
-        params.append(market)
-    query = f"""SELECT t.id AS tipster_id, t.name,
-                      COUNT(*) AS picks,
-                      SUM(pr.result='won') AS wins,
-                      SUM(pr.result='lost') AS losses,
-                      SUM(pr.result='push') AS pushes,
+    if start: clauses.append("date(pr.settled_at) >= date(?)"); params.append(start)
+    if end: clauses.append("date(pr.settled_at) <= date(?)"); params.append(end)
+    if market: clauses.append("LOWER(COALESCE(p.conservative_market,p.original_market)) = LOWER(?)"); params.append(market)
+    query = f"""SELECT t.id AS tipster_id, t.name, COUNT(*) AS picks, SUM(pr.result='won') AS wins,
+                      SUM(pr.result='lost') AS losses, SUM(pr.result='push') AS pushes,
                       AVG(COALESCE(pr.actual_odds,p.conservative_odds,p.original_odds)) AS avg_odds,
-                      SUM(CASE WHEN pr.result='won' THEN COALESCE(pr.actual_odds,p.conservative_odds,p.original_odds)-1
-                               WHEN pr.result='lost' THEN -1 ELSE 0 END) AS units
-               FROM pick_results pr
-               JOIN picks p ON p.id=pr.pick_id
-               JOIN tipsters t ON t.id=p.tipster_id
-               WHERE {' AND '.join(clauses)}
-               GROUP BY t.id, t.name
-               ORDER BY units DESC"""
-    with connect() as db:
-        rows = db.execute(query, params).fetchall()
+                      SUM(CASE WHEN pr.result='won' THEN COALESCE(pr.actual_odds,p.conservative_odds,p.original_odds)-1 WHEN pr.result='lost' THEN -1 ELSE 0 END) AS units
+               FROM pick_results pr JOIN picks p ON p.id=pr.pick_id JOIN tipsters t ON t.id=p.tipster_id
+               WHERE {' AND '.join(clauses)} GROUP BY t.id,t.name ORDER BY units DESC"""
+    with connect() as db: rows = db.execute(query, params).fetchall()
     result = []
     for row in rows:
-        picks = row["picks"]
-        units = row["units"] or 0.0
-        result.append({"tipster_id": row["tipster_id"], "name": row["name"], "picks": picks,
-                       "wins": row["wins"], "losses": row["losses"], "pushes": row["pushes"],
-                       "hit_rate": row["wins"] / picks if picks else 0.0,
-                       "avg_odds": row["avg_odds"], "units": units, "roi": units / picks if picks else 0.0,
-                       "market": market, "period": period.value})
+        picks = row["picks"]; units = row["units"] or 0.0
+        result.append({"tipster_id": row["tipster_id"], "name": row["name"], "picks": picks, "wins": row["wins"], "losses": row["losses"], "pushes": row["pushes"], "hit_rate": row["wins"] / picks if picks else 0.0, "avg_odds": row["avg_odds"], "units": units, "roi": units / picks if picks else 0.0, "market": market, "period": period.value})
     return {"period": period.value, "market": market, "tipsters": result}
+
+
+@router.get("/performance/competition-market")
+def competition_market_performance():
+    return {"groups": performance_by_competition_market()}
 
 
 @router.get("/bets/summary")
 def bets_summary(period: Period = Query(default=Period.TODOS)):
     start, end = date_filters(period)
     with connect() as db:
-        query = "SELECT stake, odds, result, cashout, placed_at FROM bets"
-        params = []
-        clauses = []
-        if start:
-            clauses.append("date(placed_at) >= date(?)"); params.append(start)
-        if end:
-            clauses.append("date(placed_at) <= date(?)"); params.append(end)
+        query = "SELECT stake, odds, result, cashout, placed_at FROM bets"; params = []; clauses = []
+        if start: clauses.append("date(placed_at) >= date(?)"); params.append(start)
+        if end: clauses.append("date(placed_at) <= date(?)"); params.append(end)
         if clauses: query += " WHERE " + " AND ".join(clauses)
         rows = db.execute(query, params).fetchall()
     settled = [r for r in rows if r["result"] != "pending"]
-    wins = sum(r["result"] == "won" for r in settled)
-    losses = sum(r["result"] == "lost" for r in settled)
-    pushes = sum(r["result"] == "push" for r in settled)
-    cashouts = sum(r["result"] == "cashout" for r in settled)
+    wins = sum(r["result"] == "won" for r in settled); losses = sum(r["result"] == "lost" for r in settled); pushes = sum(r["result"] == "push" for r in settled); cashouts = sum(r["result"] == "cashout" for r in settled)
     stake = sum(r["stake"] for r in settled)
     returns = sum(r["stake"] * r["odds"] if r["result"] == "won" else r["stake"] if r["result"] == "push" else r["cashout"] or 0 for r in settled)
     net = returns - stake
-    return {"period": period.value, "from": start, "to": end, "bets": len(rows), "settled": len(settled), "wins": wins, "losses": losses, "pushes": pushes, "cashouts": cashouts, "pending": len(rows) - len(settled), "stake": sum(r["stake"] for r in rows), "settled_stake": stake, "returns": returns, "net": net, "roi": net / stake if stake else 0, "hit_rate": wins / len(settled) if settled else 0}
+    return {"period": period.value, "from": start, "to": end, "bets": len(rows), "settled": len(settled), "wins": wins, "losses": losses, "pushes": pushes, "cashouts": cashouts, "pending": len(rows)-len(settled), "stake": sum(r["stake"] for r in rows), "settled_stake": stake, "returns": returns, "net": net, "roi": net/stake if stake else 0, "hit_rate": wins/len(settled) if settled else 0}
 
 
 @router.get("/opportunities")
@@ -152,4 +129,4 @@ def providers():
 
 @router.get("/dashboard/periods")
 def dashboard_periods():
-    return {"periods": [{"id": "hoy", "label": "HOY"}, {"id": "lunes-viernes", "label": "LUNES A VIERNES"}, {"id": "sabado-domingo", "label": "SÁBADO Y DOMINGO"}, {"id": "mes", "label": "MES"}, {"id": "3-meses", "label": "3 MESES"}, {"id": "6-meses", "label": "6 MESES"}, {"id": "todos", "label": "TODOS"}]} 
+    return {"periods": [{"id":"hoy","label":"HOY"},{"id":"lunes-viernes","label":"LUNES A VIERNES"},{"id":"sabado-domingo","label":"SÁBADO Y DOMINGO"},{"id":"mes","label":"MES"},{"id":"3-meses","label":"3 MESES"},{"id":"6-meses","label":"6 MESES"},{"id":"todos","label":"TODOS"}]} 
