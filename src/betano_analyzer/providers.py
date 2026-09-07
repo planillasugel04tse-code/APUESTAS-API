@@ -83,7 +83,9 @@ async def fetch_json(
     # OddsPapi authenticates with the API key in the query string.
     query.setdefault("apiKey", key)
     url = provider.base_url.rstrip("/") + "/" + path.lstrip("/")
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    # Avoid inheriting a system HTTP(S) proxy. On this Windows setup the
+    # proxy path causes TLSV1_UNRECOGNIZED_NAME before reaching OddsPapi.
+    async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
         response = await client.get(url, params=query, headers={"Accept": "application/json"})
         response.raise_for_status()
         return response.json()
