@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from .arbitrage import find_arbitrage
 from .backtest_report import build_backtest_report
+from .clv import calculate_clv
 from .dashboard import Period, period_range
 from .db import connect
 from .market_movement import latest_movements
@@ -208,6 +209,41 @@ async def sync_odds_endpoint(bookmakers: str = Query(default="Betano"), include_
 @router.get("/movements")
 def movements(match_id: int | None = None):
     return {"movements": [item.__dict__ for item in latest_movements(match_id)]}
+
+
+@router.post("/clv")
+def create_clv_snapshot(match_id: int, bookmaker: str, market: str, selection: str, entry_odds: float = Query(gt=1), closing_odds: float = Query(gt=1), line: float | None = None, captured_at: str | None = None):
+    if not bookmaker.strip() or not market.strip() or not selection.strip():
+        raise HTTPException(status_code=400, detail="bookmaker, market y selection son obligatorios")
+    signal = calculate_clv(entry_odds, closing_odds)
+    with connect() as db:
+        if not db.execute("SELECT id FROM matches WHERE id=?", (match_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="Partido no encontrado")
+        timestamp = captured_at or now()
+        try:
+            cur = db.execute("INSERT INTO clv_snapshots(match_id,bookmaker,market,selection,line,entry_odds,closing_odds,clv,captured_at) VALUES(?,?,?,?,?,?,?,?,?)", (match_id, bookmaker, market, selection, line, entry_odds, closing_odds, signal.clv, timestamp))
+        except Exception as exc:
+            if "unique" in str(exc).lower():
+                raise HTTPException(status_code=409, detail="El snapshot CLV ya existe para ese partido/mercado/selección/línea") from exc
+            raise
+        return {"id": cur.lastrowid, "match_id": match_id, "bookmaker": bookmaker, "market": market, "selection": selection, "line": line, "entry_odds": entry_odds, "closing_odds": closing_odds, "clv": signal.clv, "direction": signal.direction, "captured_at": timestamp}
+
+
+@router.get("/clv/summary")
+def clv_summary(period: Period = Query(default=Period.TODOS), bookmaker: str | None = None, market: str | None = None):
+    start, end = date_filters(period)
+    clauses: list[str] = []
+    params: list[object] = []
+    if start: clauses.append("date(c.captured_at) >= date(?)"); params.append(start)
+    if end: clauses.append("date(c.captured_at) <= date(?)"); params.append(end)
+    if bookmaker: clauses.append("LOWER(c.bookmaker)=LOWER(?)"); params.append(bookmaker)
+    if market: clauses.append("LOWER(c.market)=LOWER(?)"); params.append(market)
+    where = " WHERE " + " AND ".join(clauses) if clauses else ""
+    with connect() as db:
+        rows = db.execute(f"SELECT c.clv, c.entry_odds, c.closing_odds, c.bookmaker, c.market FROM clv_snapshots c{where}", params).fetchall()
+    values = [float(r["clv"]) for r in rows]
+    positive = sum(v > 0 for v in values)
+    return {"period": period.value, "bookmaker": bookmaker, "market": market, "snapshots": len(values), "positive": positive, "negative": sum(v < 0 for v in values), "flat": sum(v == 0 for v in values), "positive_rate": positive / len(values) if values else 0.0, "average_clv": sum(values) / len(values) if values else 0.0, "median_clv": sorted(values)[len(values)//2] if values else 0.0}
 
 
 @router.get("/dashboard/periods")
