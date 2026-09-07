@@ -35,6 +35,8 @@ CREATE TABLE IF NOT EXISTS picks (
     conservative_selection TEXT,
     conservative_odds REAL,
     confidence REAL,
+    probability REAL,
+    probability_source TEXT,
     created_at TEXT NOT NULL
 );
 
@@ -80,6 +82,11 @@ CREATE TABLE IF NOT EXISTS pick_results (
 );
 """
 
+MIGRATIONS = (
+    "ALTER TABLE picks ADD COLUMN probability REAL",
+    "ALTER TABLE picks ADD COLUMN probability_source TEXT",
+)
+
 
 def connect(path: str | Path = "betano_analyzer.sqlite3") -> sqlite3.Connection:
     connection = sqlite3.connect(path)
@@ -91,4 +98,10 @@ def connect(path: str | Path = "betano_analyzer.sqlite3") -> sqlite3.Connection:
 def initialize(path: str | Path = "betano_analyzer.sqlite3") -> None:
     with connect(path) as connection:
         connection.executescript(SCHEMA)
+        for statement in MIGRATIONS:
+            try:
+                connection.execute(statement)
+            except sqlite3.OperationalError as exc:
+                if "duplicate column name" not in str(exc).lower():
+                    raise
         connection.commit()
