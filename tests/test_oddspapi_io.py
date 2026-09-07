@@ -71,3 +71,8 @@ def test_parse_oddspapi_uses_catalog_line_when_bookmaker_id_has_no_line():
 def test_parse_oddspapi_ignores_suspended_bookmaker():
     payload = {"fixtureId": "id-demo", "bookmakerOdds": {"betano.pe": {"suspended": True}}}
     assert parse_odds(payload) == []
+
+
+def test_parse_oddspapi_ignores_inactive_bookmaker():
+    payload = {"fixtureId": "id-demo", "bookmakerOdds": {"betano.pe": {"bookmakerIsActive": False, "suspended": False}}}
+    assert parse_odds(payload) == []
