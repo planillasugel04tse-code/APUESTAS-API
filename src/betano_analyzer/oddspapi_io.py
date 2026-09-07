@@ -4,15 +4,13 @@ from datetime import datetime, timezone
 import re
 from typing import Any
 
-from .ingest import NormalizedMatch, NormalizedOdd, normalize_competition
+from .ingest import NormalizedMatch, NormalizedOdd, normalize_competition, normalize_market
 from .providers import fetch_json
 
 
 ODDSPAPI_BETANO_PE = "betano.pe"
 SOCCER_SPORT_ID = 10
 
-# OddsPapi tournament slugs currently used by the project. We resolve the numeric
-# tournament IDs from the API instead of hard-coding them because IDs can change.
 TARGET_TOURNAMENT_SLUGS = {
     "premier-league": "premier league",
     "laliga": "la liga",
@@ -90,7 +88,6 @@ async def fetch_fixtures(
         slug = str(item.get("tournamentSlug") or "").strip().lower()
         if slug not in TARGET_TOURNAMENT_SLUGS:
             continue
-        tournament = str(item.get("tournamentName") or slug)
         competition = TARGET_TOURNAMENT_SLUGS[slug]
         if not item.get("fixtureId") or not item.get("participant1Name") or not item.get("participant2Name"):
             continue
@@ -109,12 +106,6 @@ async def fetch_fixtures(
 def _market_catalog(
     catalog: list[dict[str, Any]],
 ) -> tuple[dict[int, tuple[str, float | None, str, str]], dict[tuple[int, int], str]]:
-    """Return market metadata plus outcome labels.
-
-    The handicap/line belongs to the market in OddsPapi's catalog for many
-    markets (for example Over/Under 2.5), while some bookmaker outcome IDs also
-    encode the line. We retain both so the parser can use the most precise value.
-    """
     market_meta: dict[int, tuple[str, float | None, str, str]] = {}
     outcome_names: dict[tuple[int, int], str] = {}
     for market in catalog:
@@ -169,6 +160,7 @@ def parse_odds(
         meta = market_meta.get(market_id_int)
         market_name = meta[0] if meta else f"market:{market_id}"
         catalog_line = meta[1] if meta else None
+        period = meta[2] if meta else ""
         for outcome_id, outcome in (market.get("outcomes") or {}).items():
             if not isinstance(outcome, dict):
                 continue
@@ -193,12 +185,13 @@ def parse_odds(
                 selection = selection_name
                 if player.get("playerName"):
                     selection = f"{selection_name}:{player['playerName']}"
+                canonical_market, canonical_selection = normalize_market(market_name, selection, period)
                 rows.append(
                     NormalizedOdd(
                         str(fixture_id),
                         bookmaker,
-                        market_name,
-                        selection,
+                        canonical_market,
+                        canonical_selection,
                         price,
                         _iso(player.get("changedAt")) if player.get("changedAt") else captured,
                         line,
