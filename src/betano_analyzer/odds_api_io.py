@@ -28,7 +28,11 @@ async def fetch_leagues() -> list[dict[str, Any]]:
 
 
 async def fetch_events(league: str, status: str = "pending", limit: int = 100) -> list[NormalizedMatch]:
-    payload = await fetch_json("odds-api-io", "/v3/events", {"sport": "football", "league": league, "status": status, "limit": limit})
+    payload = await fetch_json(
+        "odds-api-io",
+        "/v3/events",
+        {"sport": "football", "league": league, "status": status, "limit": limit},
+    )
     items = payload if isinstance(payload, list) else payload.get("events", [])
     competition = TARGET_LEAGUES.get(league, normalize_competition(league))
     return [
@@ -39,15 +43,21 @@ async def fetch_events(league: str, status: str = "pending", limit: int = 100) -
 
 
 async def fetch_live_events() -> list[NormalizedMatch]:
-    payload = await fetch_json("odds-api-io", "/events/live", {"sport": "football"})
+    payload = await fetch_json("odds-api-io", "/v3/events/live", {"sport": "football"})
     items = payload if isinstance(payload, list) else payload.get("events", [])
     result: list[NormalizedMatch] = []
     for item in items:
         league = item.get("league") or {}
         slug = league.get("slug") if isinstance(league, dict) else str(league)
-        competition = TARGET_LEAGUES.get(slug, normalize_competition(slug or "football"))
+        if slug not in TARGET_LEAGUES:
+            continue
+        competition = TARGET_LEAGUES[slug]
         if item.get("id") is not None and item.get("home") and item.get("away"):
-            result.append(NormalizedMatch(str(item["id"]), competition, str(item["home"]), str(item["away"]), _iso(item.get("date"))))
+            result.append(
+                NormalizedMatch(
+                    str(item["id"]), competition, str(item["home"]), str(item["away"]), _iso(item.get("date"))
+                )
+            )
     return result
 
 
@@ -80,3 +90,19 @@ async def fetch_odds(event_id: str, bookmakers: list[str] | None = None) -> list
         params["bookmakers"] = ",".join(bookmakers)
     payload = await fetch_json("odds-api-io", "/v3/odds", params)
     return _market_rows(event_id, payload if isinstance(payload, dict) else {})
+
+
+async def fetch_odds_multi(event_ids: list[str], bookmakers: list[str] | None = None) -> list[NormalizedOdd]:
+    if not event_ids:
+        return []
+    params: dict[str, Any] = {"eventIds": ",".join(event_ids)}
+    if bookmakers:
+        params["bookmakers"] = ",".join(bookmakers)
+    payload = await fetch_json("odds-api-io", "/v3/odds/multi", params)
+    if not isinstance(payload, dict):
+        return []
+    rows: list[NormalizedOdd] = []
+    for event_id, data in payload.items():
+        if isinstance(data, dict):
+            rows.extend(_market_rows(str(event_id), data))
+    return rows
