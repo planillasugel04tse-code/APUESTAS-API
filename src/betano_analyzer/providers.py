@@ -20,9 +20,13 @@ class ProviderConfig:
         return bool(self.enabled and self.base_url and self.api_key_env and os.getenv(self.api_key_env))
 
 
+def _enabled(env_name: str) -> bool:
+    return os.getenv(env_name, "0").strip().lower() in {"1", "true", "yes", "on"}
+
+
 DEFAULT_PROVIDERS = (
-    ProviderConfig("odds-api-io", "odds", "https://api.odds-api.io", "ODDS_API_IO_KEY", False),
-    ProviderConfig("oddspapi", "odds", "https://api.oddspapi.com", "ODDSPAPI_KEY", False),
+    ProviderConfig("odds-api-io", "odds", os.getenv("ODDS_API_IO_BASE_URL", "https://api.odds-api.io"), "ODDS_API_IO_KEY", _enabled("ODDS_API_IO_ENABLED")),
+    ProviderConfig("oddspapi", "odds", os.getenv("ODDSPAPI_BASE_URL", "https://api.oddspapi.com"), "ODDSPAPI_KEY", _enabled("ODDSPAPI_ENABLED")),
 )
 
 
