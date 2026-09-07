@@ -43,6 +43,12 @@ def _line_from_outcome_id(value: Any) -> float | None:
     return float(match.group(1)) if match else None
 
 
+async def fetch_account() -> dict[str, Any]:
+    """Read OddsPapi quota/account state; this endpoint is not metered."""
+    payload = await fetch_json("oddspapi", "/v4/account")
+    return payload if isinstance(payload, dict) else {}
+
+
 async def fetch_tournaments() -> list[dict[str, Any]]:
     payload = await fetch_json("oddspapi", "/v4/tournaments", {"sportId": SOCCER_SPORT_ID})
     return payload if isinstance(payload, list) else []
@@ -215,7 +221,13 @@ async def fetch_odds(
     payload = await fetch_json(
         "oddspapi",
         "/v4/odds",
-        {"fixtureId": fixture_id, "bookmakers": bookmaker, "language": "en", "verbosity": 3},
+        {
+            "fixtureId": fixture_id,
+            "bookmakers": bookmaker,
+            "oddsFormat": "decimal",
+            "language": "en",
+            "verbosity": 3,
+        },
     )
     if not isinstance(payload, dict):
         return []
