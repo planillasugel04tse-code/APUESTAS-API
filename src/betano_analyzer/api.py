@@ -6,6 +6,7 @@ from fastapi import APIRouter, Query
 
 from .dashboard import Period, period_range
 from .db import connect
+from .radar import build_radar
 from .schemas import BetCreate, MatchCreate, PickCreate
 
 router = APIRouter(prefix="/api/v1")
@@ -91,6 +92,11 @@ def bets_summary(period: Period = Query(default=Period.TODOS)):
         "roi": net / settled_stake if settled_stake else 0,
         "hit_rate": wins / len(settled) if settled else 0,
     }
+
+
+@router.get("/opportunities")
+def opportunities(limit: int = Query(default=20, ge=1, le=100)):
+    return build_radar(limit=limit)
 
 
 @router.get("/dashboard/periods")
