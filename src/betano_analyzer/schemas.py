@@ -41,6 +41,7 @@ class OddsCreate(BaseModel):
     selection: str
     odds: float = Field(gt=1)
     captured_at: str | None = None
+    line: float | None = None
 
 
 class BetCreate(BaseModel):
@@ -49,7 +50,7 @@ class BetCreate(BaseModel):
     selection: str
     odds: float = Field(gt=1)
     stake: float = Field(gt=0)
-    result: str = "pending"
+    result: str = Field(default="pending", pattern="^(won|lost|pending|push|cashout)$")
     cashout: float | None = Field(default=None, ge=0)
     placed_at: str
 
