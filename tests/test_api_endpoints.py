@@ -14,6 +14,15 @@ def test_health():
     assert response.json()["status"] == "ok"
 
 
+def test_conservative_preview():
+    response = client.get("/api/v1/conservative-preview", params={"market": "1x2", "selection": "Home"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["conservative_market"] == "double_chance"
+    assert body["conservative_selection"] == "1X"
+    assert body["changed"] is True
+
+
 def test_create_tipster_match_odds_pick_and_bet():
     suffix = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
     match = client.post("/api/v1/matches", json={
