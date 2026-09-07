@@ -52,7 +52,7 @@ def create_odds(data: OddsCreate):
     with connect() as db:
         if not db.execute("SELECT id FROM matches WHERE id = ?", (data.match_id,)).fetchone():
             raise HTTPException(status_code=404, detail="Partido no encontrado")
-        cur = db.execute("INSERT INTO odds(match_id,bookmaker,market,selection,odds,captured_at,line) VALUES(?,?,?,?,?,?,?)", (data.match_id, data.bookmaker, data.market, data.selection, data.odds, captured_at, getattr(data, "line", None)))
+        cur = db.execute("INSERT INTO odds(match_id,bookmaker,market,selection,odds,captured_at,line) VALUES(?,?,?,?,?,?,?)", (data.match_id, data.bookmaker, data.market, data.selection, data.odds, captured_at, data.line))
         return {"id": cur.lastrowid, **data.model_dump(), "captured_at": captured_at}
 
 
@@ -81,6 +81,33 @@ def settle_pick(pick_id: int, data: PickResultCreate, strategy: str = Query(defa
             db.execute("""INSERT INTO pick_results(pick_id,result,settled_at,actual_odds,notes) VALUES(?,?,?,?,?)
                          ON CONFLICT(pick_id) DO UPDATE SET result=excluded.result, settled_at=excluded.settled_at, actual_odds=excluded.actual_odds, notes=excluded.notes""", (pick_id, data.result, settled_at, data.actual_odds, data.notes))
         return dict(db.execute("SELECT * FROM pick_strategy_results WHERE pick_id=? AND strategy=?", (pick_id, strategy)).fetchone())
+
+
+@router.post("/bets")
+def create_bet(data: BetCreate):
+    with connect() as db:
+        if not db.execute("SELECT id FROM matches WHERE id = ?", (data.match_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="Partido no encontrado")
+        if data.pick_id is not None and not db.execute("SELECT id FROM picks WHERE id = ?", (data.pick_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="Pick no encontrado")
+        values = data.model_dump()
+        cur = db.execute("""INSERT INTO bets(match_id,pick_id,selection,odds,stake,result,cashout,placed_at,settled_at)
+                           VALUES(?,?,?,?,?,?,?,?,?)""", (values["match_id"], values["pick_id"], values["selection"], values["odds"], values["stake"], values["result"], values["cashout"], values["placed_at"], now() if values["result"] != "pending" else None))
+        return {"id": cur.lastrowid, **values, "potential_return": round(values["stake"] * values["odds"], 12)}
+
+
+@router.patch("/bets/{bet_id}/settle")
+def settle_bet(bet_id: int, data: BetSettle):
+    settled_at = data.settled_at or now()
+    with connect() as db:
+        row = db.execute("SELECT * FROM bets WHERE id = ?", (bet_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Apuesta no encontrada")
+        if data.result == "cashout" and data.cashout is None:
+            raise HTTPException(status_code=400, detail="cashout es obligatorio para resultado cashout")
+        db.execute("UPDATE bets SET result=?, cashout=?, settled_at=? WHERE id=?", (data.result, data.cashout, settled_at, bet_id))
+        updated = db.execute("SELECT * FROM bets WHERE id = ?", (bet_id,)).fetchone()
+        return dict(updated)
 
 
 @router.get("/tipsters/performance")
