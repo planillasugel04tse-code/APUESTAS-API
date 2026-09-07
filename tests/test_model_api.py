@@ -19,6 +19,7 @@ def test_model_endpoints_are_exposed():
     assert abs(mc.json()['home_win'] + mc.json()['draw'] + mc.json()['away_win'] - 1) < 0.001
 
 
-def test_oddspapi_sync_endpoint_is_exposed():
+def test_oddspapi_endpoints_are_exposed():
     paths = {route.path for route in app.routes}
+    assert '/api/v1/oddspapi/account' in paths
     assert '/api/v1/oddspapi/sync' in paths
