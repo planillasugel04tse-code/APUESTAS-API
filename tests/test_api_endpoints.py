@@ -35,8 +35,10 @@ def test_create_tipster_match_odds_pick_and_bet():
         "market": "over",
         "selection": "2.0",
         "odds": 1.75,
+        "line": 2.0,
     })
     assert odds.status_code == 200
+    assert odds.json()["line"] == 2.0
 
     pick = client.post("/api/v1/picks", json={
         "match_id": match_id,
