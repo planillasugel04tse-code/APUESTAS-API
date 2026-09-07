@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from .api import router
 from .db import initialize
 from .model_api import router as model_router
+from .oddspapi_api import router as oddspapi_router
 from .web import dashboard_response
 
 # Initialize the local schema at import time as well as on FastAPI startup.
@@ -14,6 +15,7 @@ initialize()
 app = FastAPI(title="Betano Live Analyzer", version="0.1.0")
 app.include_router(router)
 app.include_router(model_router)
+app.include_router(oddspapi_router)
 
 
 @app.on_event("startup")
