@@ -76,3 +76,21 @@ def test_create_tipster_match_odds_pick_and_bet():
     settled = client.patch(f"/api/v1/bets/{bet.json()['id']}/settle", json={"result": "won"})
     assert settled.status_code == 200
     assert settled.json()["result"] == "won"
+
+    clv = client.post("/api/v1/clv", params={
+        "match_id": match_id,
+        "bookmaker": "TestBook",
+        "market": "over",
+        "selection": "2.0",
+        "entry_odds": 1.75,
+        "closing_odds": 1.60,
+        "line": 2.0,
+    })
+    assert clv.status_code == 200
+    assert clv.json()["direction"] == "positive"
+    assert clv.json()["clv"] > 0
+
+    summary = client.get("/api/v1/clv/summary", params={"bookmaker": "TestBook", "market": "over"})
+    assert summary.status_code == 200
+    assert summary.json()["snapshots"] >= 1
+    assert summary.json()["positive"] >= 1
