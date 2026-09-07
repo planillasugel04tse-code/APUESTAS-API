@@ -13,16 +13,14 @@ def test_backtest_separates_original_and_conservative(tmp_path):
         settled = "2026-09-07T22:00:00+00:00"
         db.execute("INSERT INTO pick_strategy_results(pick_id,strategy,result,settled_at,actual_odds) VALUES(?,?,?,?,?)", (pick_id, "original", "lost", settled, 1.60))
         db.execute("INSERT INTO pick_strategy_results(pick_id,strategy,result,settled_at,actual_odds) VALUES(?,?,?,?,?)", (pick_id, "conservative", "won", settled, 1.40))
+        db.execute("INSERT INTO bets(match_id,pick_id,selection,odds,stake,result,placed_at,settled_at) VALUES(?,?,?,?,?,?,?,?,?)", (match_id, pick_id, "Over 2", 1.40, 10, "won", "2026-09-07T10:00:00+00:00", settled))
         db.commit()
 
-    import os
-    old = os.getcwd()
-    os.chdir(tmp_path)
-    try:
-        report = build_backtest_report()
-    finally:
-        os.chdir(old)
+    report = build_backtest_report(db_path=db_path)
 
     assert report["overall"]["original"]["losses"] == 1
     assert report["overall"]["conservative"]["wins"] == 1
+    assert report["overall"]["actual"]["wins"] == 1
+    assert report["overall"]["actual"]["stake"] == 10
     assert report["coverage"]["paired_picks"] == 1
+    assert report["coverage"]["actual_bets"] == 1
