@@ -10,14 +10,17 @@ def build_final_selection(limit: int = 10) -> dict:
 
     for item in candidates:
         score = float(item.get("master_score", 0))
+        has_fusion = "fused_probability" in item
+        probability = float(item.get("fused_probability", item.get("model_probability", 0)) or 0)
         edge = float(item.get("fused_edge", item.get("edge", 0)) or 0)
         ev = float(item.get("fused_ev", item.get("ev", 0)) or 0)
-        probability = float(item.get("fused_probability", item.get("model_probability", 0)) or 0)
         books = int(item.get("bookmakers", 0))
         signals = item.get("signals", {})
         positive = sum(bool(v) for v in signals.values())
 
-        if probability < 0.50 or score < 68 or edge < 0.03 or ev < 0.03:
+        if score < 68 or edge < 0.03 or ev < 0.03:
+            continue
+        if has_fusion and probability < 0.50:
             continue
         if books < 2:
             continue
@@ -45,6 +48,6 @@ def build_final_selection(limit: int = 10) -> dict:
         "count": len(selected),
         "requested": min(limit, 10),
         "status": "OK" if selected else "NO_BET",
-        "note": "La selección final exige valor de la probabilidad fusionada, consenso y señales positivas; no se rellenan cupos con selecciones débiles.",
+        "note": "La selección final exige valor de la probabilidad fusionada cuando está disponible, consenso y señales positivas; no se rellenan cupos con selecciones débiles.",
         "opportunities": selected,
     }
