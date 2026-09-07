@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 
 from .db import connect
+from .probability_fusion import fuse_probabilities
 from .radar_value import build_value_radar
 from .radar import build_radar
 
@@ -92,8 +93,29 @@ def build_master_radar(limit: int = 20) -> dict:
         candidates = []
         for key, v in value_by_key.items():
             b = by_key.get(key, {})
-            edge = float(v.get("edge", 0.0) or 0.0)
-            ev = float(v.get("ev", 0.0) or 0.0)
+            offered_odds = float(v.get("odds", 0.0) or 0.0)
+            model_probability = b.get("model_probability")
+            market_probability = v.get("fair_probability")
+            if model_probability is not None:
+                fusion = fuse_probabilities(
+                    [float(model_probability)],
+                    market_probability=float(market_probability) if market_probability is not None else None,
+                    offered_odds=offered_odds,
+                    min_probability=0.50,
+                    min_edge=0.03,
+                )
+                fused_probability = fusion.probability
+                fused_source = "+".join(fusion.sources)
+                fused_edge = fused_probability - (1.0 / offered_odds) if offered_odds > 1 else 0.0
+                fused_ev = fused_probability * offered_odds - 1.0 if offered_odds > 1 else 0.0
+            else:
+                fused_probability = float(market_probability or 0.0)
+                fused_source = "market_consensus" if market_probability is not None else "unavailable"
+                fused_edge = float(v.get("edge", 0.0) or 0.0)
+                fused_ev = float(v.get("ev", 0.0) or 0.0)
+
+            edge = fused_edge
+            ev = fused_ev
             consensus = int(v.get("bookmakers", 0) or 0)
             model_edge = float(b.get("edge", 0.0) or 0.0)
             model_conf = float(b.get("confidence", 0.0) or 0.0)
@@ -111,16 +133,18 @@ def build_master_radar(limit: int = 20) -> dict:
             rating = "fuerte" if score >= 80 else "interesante" if score >= 68 else "vigilar" if score >= 55 else "descartar"
             candidates.append({**v, "master_score": round(_clamp(score), 1), "rating": rating,
                                "model_edge": round(model_edge, 4), "model_confidence": round(model_conf, 4),
+                               "fused_probability": round(fused_probability, 4), "fused_edge": round(fused_edge, 4),
+                               "fused_ev": round(fused_ev, 4), "probability_source": fused_source,
                                "movement": round(move, 4), "historical_hit_rate": round(hist, 4),
                                "tipster_signal": round(tip_signal, 4), "tipsters": tipsters,
                                "tipster_picks": tipster_picks, "average_clv": round(clv, 4),
                                "signals": {"value": edge >= 0.03, "consensus": consensus >= 3,
-                                           "model": model_edge > 0, "movement": move > 0,
-                                           "history": hist >= 0.55, "tipsters": tip_signal > 0,
-                                           "clv": clv > 0}})
+                                           "model": model_edge > 0, "fusion": fused_ev >= 0.03,
+                                           "movement": move > 0, "history": hist >= 0.55,
+                                           "tipsters": tip_signal > 0, "clv": clv > 0}})
 
-    candidates.sort(key=lambda x: (x["master_score"], x["edge"], x["bookmakers"]), reverse=True)
+    candidates.sort(key=lambda x: (x["master_score"], x["fused_edge"], x["bookmakers"]), reverse=True)
     return {"count": min(limit, len(candidates)),
-            "method": "value + radar + movement + tipsters + historical results + CLV",
+            "method": "fused model + market consensus + value + radar + movement + tipsters + historical results + CLV",
             "warning": "master_score es un ranking de señales, no una probabilidad de acierto ni una garantía de beneficio.",
             "opportunities": candidates[: max(1, min(limit, 100))]}
