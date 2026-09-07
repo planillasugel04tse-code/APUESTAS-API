@@ -7,10 +7,12 @@ from fastapi import APIRouter, HTTPException, Query
 from .backtest_report import build_backtest_report
 from .dashboard import Period, period_range
 from .db import connect
+from .market_movement import latest_movements
 from .market_performance import performance_by_competition_market
 from .providers import provider_status
 from .radar import build_radar
 from .schemas import BetCreate, BetSettle, MatchCreate, OddsCreate, PickCreate, PickResultCreate, TipsterCreate
+from .sync_service import sync_odds
 
 router = APIRouter(prefix="/api/v1")
 
@@ -46,7 +48,7 @@ def create_odds(data: OddsCreate):
     with connect() as db:
         if not db.execute("SELECT id FROM matches WHERE id = ?", (data.match_id,)).fetchone():
             raise HTTPException(status_code=404, detail="Partido no encontrado")
-        cur = db.execute("INSERT INTO odds(match_id,bookmaker,market,selection,odds,captured_at) VALUES(?,?,?,?,?,?)", (data.match_id, data.bookmaker, data.market, data.selection, data.odds, captured_at))
+        cur = db.execute("INSERT INTO odds(match_id,bookmaker,market,selection,odds,captured_at,line) VALUES(?,?,?,?,?,?,?)", (data.match_id, data.bookmaker, data.market, data.selection, data.odds, captured_at, getattr(data, "line", None)))
         return {"id": cur.lastrowid, **data.model_dump(), "captured_at": captured_at}
 
 
@@ -64,14 +66,17 @@ def create_pick(data: PickCreate):
 
 
 @router.post("/picks/{pick_id}/result")
-def settle_pick(pick_id: int, data: PickResultCreate):
+def settle_pick(pick_id: int, data: PickResultCreate, strategy: str = Query(default="original", pattern="^(original|conservative)$")):
     settled_at = data.settled_at or now()
     with connect() as db:
         if not db.execute("SELECT id FROM picks WHERE id = ?", (pick_id,)).fetchone():
             raise HTTPException(status_code=404, detail="Pick no encontrado")
-        db.execute("""INSERT INTO pick_results(pick_id,result,settled_at,actual_odds,notes) VALUES(?,?,?,?,?)
-                     ON CONFLICT(pick_id) DO UPDATE SET result=excluded.result, settled_at=excluded.settled_at, actual_odds=excluded.actual_odds, notes=excluded.notes""", (pick_id, data.result, settled_at, data.actual_odds, data.notes))
-        return dict(db.execute("SELECT * FROM pick_results WHERE pick_id = ?", (pick_id,)).fetchone())
+        db.execute("""INSERT INTO pick_strategy_results(pick_id,strategy,result,settled_at,actual_odds,notes) VALUES(?,?,?,?,?,?)
+                     ON CONFLICT(pick_id,strategy) DO UPDATE SET result=excluded.result, settled_at=excluded.settled_at, actual_odds=excluded.actual_odds, notes=excluded.notes""", (pick_id, strategy, data.result, settled_at, data.actual_odds, data.notes))
+        if strategy == "original":
+            db.execute("""INSERT INTO pick_results(pick_id,result,settled_at,actual_odds,notes) VALUES(?,?,?,?,?)
+                         ON CONFLICT(pick_id) DO UPDATE SET result=excluded.result, settled_at=excluded.settled_at, actual_odds=excluded.actual_odds, notes=excluded.notes""", (pick_id, data.result, settled_at, data.actual_odds, data.notes))
+        return dict(db.execute("SELECT * FROM pick_strategy_results WHERE pick_id=? AND strategy=?", (pick_id, strategy)).fetchone())
 
 
 @router.get("/tipsters/performance")
@@ -133,6 +138,20 @@ def providers():
     return {"providers": provider_status()}
 
 
+@router.post("/sync/odds")
+async def sync_odds_endpoint(bookmakers: str = Query(default="Betano"), include_live: bool = False, limit_per_league: int = Query(default=100, ge=1, le=200)):
+    books = [item.strip() for item in bookmakers.split(",") if item.strip()]
+    if not books:
+        raise HTTPException(status_code=400, detail="Debes indicar al menos una casa de apuestas")
+    summary = await sync_odds(books, include_live=include_live, limit_per_league=limit_per_league)
+    return summary.__dict__
+
+
+@router.get("/movements")
+def movements(match_id: int | None = None):
+    return {"movements": [item.__dict__ for item in latest_movements(match_id)]}
+
+
 @router.get("/dashboard/periods")
 def dashboard_periods():
-    return {"periods": [{"id":"hoy","label":"HOY"},{"id":"lunes-viernes","label":"LUNES A VIERNES"},{"id":"sabado-domingo","label":"SÁBADO Y DOMINGO"},{"id":"mes","label":"MES"},{"id":"3-meses","label":"3 MESES"},{"id":"6-meses","label":"6 MESES"},{"id":"todos","label":"TODOS"}]} 
+    return {"periods": [{"id":"hoy","label":"HOY"},{"id":"lunes-viernes","label":"LUNES A VIERNES"},{"id":"sabado-domingo","label":"SÁBADO Y DOMINGO"},{"id":"mes","label":"MES"},{"id":"3-meses","label":"3 MESES"},{"id":"6-meses","label":"6 MESES"},{"id":"todos","label":"TODOS"}]}
