@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query
 
+from .backtest_report import build_backtest_report
 from .dashboard import Period, period_range
 from .db import connect
 from .market_performance import performance_by_competition_market
@@ -98,6 +99,11 @@ def tipsters_performance(period: Period = Query(default=Period.TODOS), market: s
 @router.get("/performance/competition-market")
 def competition_market_performance():
     return {"groups": performance_by_competition_market()}
+
+
+@router.get("/backtest/report")
+def backtest_report(period: Period = Query(default=Period.TODOS)):
+    return build_backtest_report(period)
 
 
 @router.get("/bets/summary")
