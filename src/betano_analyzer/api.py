@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -8,7 +8,7 @@ from .dashboard import Period, period_range
 from .db import connect
 from .providers import provider_status
 from .radar import build_radar
-from .schemas import BetCreate, BetSettle, MatchCreate, OddsCreate, PickCreate, TipsterCreate
+from .schemas import BetCreate, BetSettle, MatchCreate, OddsCreate, PickCreate, PickResultCreate, TipsterCreate
 
 router = APIRouter(prefix="/api/v1")
 
@@ -55,33 +55,65 @@ def create_pick(data: PickCreate):
             raise HTTPException(status_code=404, detail="Partido no encontrado")
         if data.tipster_id is not None and not db.execute("SELECT id FROM tipsters WHERE id = ?", (data.tipster_id,)).fetchone():
             raise HTTPException(status_code=404, detail="Tipster no encontrado")
-        cur = db.execute("""INSERT INTO picks(match_id,tipster_id,original_market,original_selection,original_odds,conservative_market,conservative_selection,conservative_odds,confidence,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)""", (*data.model_dump().values(), now()))
-        return {"id": cur.lastrowid, **data.model_dump()}
+        values = data.model_dump()
+        columns = "match_id,tipster_id,original_market,original_selection,original_odds,conservative_market,conservative_selection,conservative_odds,confidence,probability,probability_source,created_at"
+        cur = db.execute(f"INSERT INTO picks({columns}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", (values["match_id"], values["tipster_id"], values["original_market"], values["original_selection"], values["original_odds"], values["conservative_market"], values["conservative_selection"], values["conservative_odds"], values["confidence"], values["probability"], values["probability_source"], now()))
+        return {"id": cur.lastrowid, **values}
 
 
-@router.post("/bets")
-def create_bet(data: BetCreate):
-    with connect() as db:
-        if not db.execute("SELECT id FROM matches WHERE id = ?", (data.match_id,)).fetchone():
-            raise HTTPException(status_code=404, detail="Partido no encontrado")
-        if data.pick_id is not None and not db.execute("SELECT id FROM picks WHERE id = ?", (data.pick_id,)).fetchone():
-            raise HTTPException(status_code=404, detail="Pick no encontrado")
-        if data.result == "cashout" and data.cashout is None:
-            raise HTTPException(status_code=422, detail="Una apuesta cashout requiere importe de cashout")
-        cur = db.execute("INSERT INTO bets(match_id,pick_id,selection,odds,stake,result,cashout,placed_at) VALUES(?,?,?,?,?,?,?,?)", (*data.model_dump().values(),))
-        return {"id": cur.lastrowid, **data.model_dump(), "potential_return": data.stake * data.odds}
-
-
-@router.patch("/bets/{bet_id}/settle")
-def settle_bet(bet_id: int, data: BetSettle):
-    if data.result == "cashout" and data.cashout is None:
-        raise HTTPException(status_code=422, detail="Una apuesta cashout requiere importe de cashout")
+@router.post("/picks/{pick_id}/result")
+def settle_pick(pick_id: int, data: PickResultCreate):
     settled_at = data.settled_at or now()
     with connect() as db:
-        cur = db.execute("UPDATE bets SET result = ?, cashout = ?, settled_at = ? WHERE id = ?", (data.result, data.cashout, settled_at, bet_id))
-        if cur.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Apuesta no encontrada")
-        return dict(db.execute("SELECT * FROM bets WHERE id = ?", (bet_id,)).fetchone())
+        if not db.execute("SELECT id FROM picks WHERE id = ?", (pick_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="Pick no encontrado")
+        db.execute("""INSERT INTO pick_results(pick_id,result,settled_at,actual_odds,notes)
+                     VALUES(?,?,?,?,?)
+                     ON CONFLICT(pick_id) DO UPDATE SET result=excluded.result, settled_at=excluded.settled_at, actual_odds=excluded.actual_odds, notes=excluded.notes""",
+                   (pick_id, data.result, settled_at, data.actual_odds, data.notes))
+        return dict(db.execute("SELECT * FROM pick_results WHERE pick_id = ?", (pick_id,)).fetchone())
+
+
+@router.get("/tipsters/performance")
+def tipsters_performance(period: Period = Query(default=Period.TODOS), market: str | None = None):
+    start, end = date_filters(period)
+    params: list[object] = []
+    clauses = ["pr.result IN ('won','lost','push')"]
+    if start:
+        clauses.append("date(pr.settled_at) >= date(?)")
+        params.append(start)
+    if end:
+        clauses.append("date(pr.settled_at) <= date(?)")
+        params.append(end)
+    if market:
+        clauses.append("LOWER(COALESCE(p.conservative_market,p.original_market)) = LOWER(?)")
+        params.append(market)
+    query = f"""SELECT t.id AS tipster_id, t.name,
+                      COUNT(*) AS picks,
+                      SUM(pr.result='won') AS wins,
+                      SUM(pr.result='lost') AS losses,
+                      SUM(pr.result='push') AS pushes,
+                      AVG(COALESCE(pr.actual_odds,p.conservative_odds,p.original_odds)) AS avg_odds,
+                      SUM(CASE WHEN pr.result='won' THEN COALESCE(pr.actual_odds,p.conservative_odds,p.original_odds)-1
+                               WHEN pr.result='lost' THEN -1 ELSE 0 END) AS units
+               FROM pick_results pr
+               JOIN picks p ON p.id=pr.pick_id
+               JOIN tipsters t ON t.id=p.tipster_id
+               WHERE {' AND '.join(clauses)}
+               GROUP BY t.id, t.name
+               ORDER BY units DESC"""
+    with connect() as db:
+        rows = db.execute(query, params).fetchall()
+    result = []
+    for row in rows:
+        picks = row["picks"]
+        units = row["units"] or 0.0
+        result.append({"tipster_id": row["tipster_id"], "name": row["name"], "picks": picks,
+                       "wins": row["wins"], "losses": row["losses"], "pushes": row["pushes"],
+                       "hit_rate": row["wins"] / picks if picks else 0.0,
+                       "avg_odds": row["avg_odds"], "units": units, "roi": units / picks if picks else 0.0,
+                       "market": market, "period": period.value})
+    return {"period": period.value, "market": market, "tipsters": result}
 
 
 @router.get("/bets/summary")
@@ -120,4 +152,4 @@ def providers():
 
 @router.get("/dashboard/periods")
 def dashboard_periods():
-    return {"periods": [{"id": "hoy", "label": "HOY"}, {"id": "lunes-viernes", "label": "LUNES A VIERNES"}, {"id": "sabado-domingo", "label": "SÁBADO Y DOMINGO"}, {"id": "mes", "label": "MES"}, {"id": "3-meses", "label": "3 MESES"}, {"id": "6-meses", "label": "6 MESES"}, {"id": "todos", "label": "TODOS"}]}
+    return {"periods": [{"id": "hoy", "label": "HOY"}, {"id": "lunes-viernes", "label": "LUNES A VIERNES"}, {"id": "sabado-domingo", "label": "SÁBADO Y DOMINGO"}, {"id": "mes", "label": "MES"}, {"id": "3-meses", "label": "3 MESES"}, {"id": "6-meses", "label": "6 MESES"}, {"id": "todos", "label": "TODOS"}]} 
