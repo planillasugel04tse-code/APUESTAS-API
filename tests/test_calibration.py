@@ -6,7 +6,7 @@ from betano_analyzer.calibration import calibration_report
 def test_calibration_report_returns_core_metrics():
     report = calibration_report([0.60, 0.70, 0.80, 0.40], [1, 1, 0, 0], buckets=4)
     assert report.samples == 4
-    assert report.brier_score == pytest.approx(0.255)
+    assert report.brier_score == pytest.approx(0.2625)
     assert report.observed_rate == pytest.approx(0.5)
     assert report.mean_probability == pytest.approx(0.625)
     assert report.calibration_error >= 0
