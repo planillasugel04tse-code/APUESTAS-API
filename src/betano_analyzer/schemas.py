@@ -30,6 +30,8 @@ class PickCreate(BaseModel):
     conservative_selection: str | None = None
     conservative_odds: float | None = Field(default=None, gt=1)
     confidence: float | None = Field(default=None, ge=0, le=1)
+    probability: float | None = Field(default=None, ge=0, le=1)
+    probability_source: str | None = None
 
 
 class OddsCreate(BaseModel):
@@ -56,3 +58,10 @@ class BetSettle(BaseModel):
     result: str = Field(pattern="^(won|lost|pending|push|cashout)$")
     cashout: float | None = Field(default=None, ge=0)
     settled_at: str | None = None
+
+
+class PickResultCreate(BaseModel):
+    result: str = Field(pattern="^(won|lost|push|void)$")
+    settled_at: str | None = None
+    actual_odds: float | None = Field(default=None, gt=1)
+    notes: str | None = None
