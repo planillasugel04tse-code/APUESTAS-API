@@ -1,7 +1,10 @@
+from datetime import date
+
 from fastapi import FastAPI
 
 from .api import router
 from .db import initialize
+from .web import dashboard_response
 
 app = FastAPI(title="Betano Live Analyzer", version="0.1.0")
 app.include_router(router)
@@ -15,3 +18,8 @@ def startup() -> None:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "betano-live-analyzer"}
+
+
+@app.get("/", include_in_schema=False)
+def dashboard():
+    return dashboard_response(date.today())
