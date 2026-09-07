@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .calibration import calibration_report
 from .db import connect
 from .dashboard import Period, period_range
 
@@ -59,6 +60,47 @@ def _grouped_actual(rows: list[dict]) -> list[dict]:
     return sorted(out, key=lambda x: (x["bets"] >= 30, x["roi"]), reverse=True)
 
 
+def _probability_quality(rows: list[dict]) -> dict:
+    """Measure historical probability quality without treating pushes as binary outcomes."""
+    settled = [
+        row for row in rows
+        if row.get("probability") is not None and row["result"] in {"won", "lost"}
+    ]
+    if not settled:
+        return {
+            "samples": 0,
+            "available": False,
+            "reason": "no_settled_binary_probability_samples",
+        }
+
+    probabilities = [float(row["probability"]) for row in settled]
+    outcomes = [1 if row["result"] == "won" else 0 for row in settled]
+    report = calibration_report(probabilities, outcomes)
+    return {
+        "available": True,
+        "samples": report.samples,
+        "brier_score": report.brier_score,
+        "log_loss": report.log_loss,
+        "mean_probability": report.mean_probability,
+        "observed_rate": report.observed_rate,
+        "mean_absolute_error": report.mean_absolute_error,
+        "calibration_error": report.calibration_error,
+        "buckets": list(report.buckets),
+    }
+
+
+def _probability_quality_by_source(rows: list[dict]) -> list[dict]:
+    groups: dict[str, list[dict]] = {}
+    for row in rows:
+        source = row.get("probability_source") or "sin_fuente"
+        groups.setdefault(source, []).append(row)
+    out = []
+    for source, values in groups.items():
+        quality = _probability_quality(values)
+        out.append({"probability_source": source, **quality})
+    return sorted(out, key=lambda x: (x["samples"] >= 30, x["samples"]), reverse=True)
+
+
 def build_backtest_report(period: Period = Period.TODOS, db_path: str | Path | None = None) -> dict:
     start, end = period_range(period)
     clauses = ["p.result IN ('won','lost','push')"]
@@ -81,6 +123,7 @@ def build_backtest_report(period: Period = Period.TODOS, db_path: str | Path | N
             SELECT m.competition, p.pick_id,
                    pk.original_market, pk.original_odds,
                    pk.conservative_market, pk.conservative_odds,
+                   pk.probability, pk.probability_source,
                    p.strategy, p.result, p.actual_odds
             FROM pick_strategy_results p
             JOIN picks pk ON pk.id=p.pick_id
@@ -107,9 +150,12 @@ def build_backtest_report(period: Period = Period.TODOS, db_path: str | Path | N
         elif row["strategy"] == "conservative":
             conservative_rows.append({**row, "odds": row["actual_odds"] or row["conservative_odds"]})
 
+    probability_rows = original_rows
     return {
         "period": period.value,
         "overall": {"original": _summary(original_rows), "conservative": _summary(conservative_rows), "actual": _actual_summary(actual_records)},
+        "probability_quality": _probability_quality(probability_rows),
+        "probability_quality_by_source": _probability_quality_by_source(probability_rows),
         "by_competition_market": {
             "original": _grouped(original_rows, "original_market"),
             "conservative": _grouped(conservative_rows, "conservative_market"),
@@ -120,6 +166,7 @@ def build_backtest_report(period: Period = Period.TODOS, db_path: str | Path | N
             "conservative_picks": len(conservative_rows),
             "paired_picks": len({r["pick_id"] for r in original_rows} & {r["pick_id"] for r in conservative_rows}),
             "actual_bets": len(actual_records),
+            "probability_samples": len([r for r in probability_rows if r.get("probability") is not None and r["result"] in {"won", "lost"}]),
         },
-        "note": "Original, conservadora y apuesta real se miden por separado. La estrategia real usa las apuestas registradas y no replica resultados faltantes."
+        "note": "Original, conservadora y apuesta real se miden por separado. La estrategia real usa las apuestas registradas y no replica resultados faltantes. La calidad de probabilidades se calcula solo con resultados binarios liquidados (won/lost); push no se fuerza a 0/1."
     }
