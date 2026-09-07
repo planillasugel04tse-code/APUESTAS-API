@@ -10,13 +10,14 @@ def build_final_selection(limit: int = 10) -> dict:
 
     for item in candidates:
         score = float(item.get("master_score", 0))
-        edge = float(item.get("edge", 0))
-        ev = float(item.get("ev", 0))
+        edge = float(item.get("fused_edge", item.get("edge", 0)) or 0)
+        ev = float(item.get("fused_ev", item.get("ev", 0)) or 0)
+        probability = float(item.get("fused_probability", item.get("model_probability", 0)) or 0)
         books = int(item.get("bookmakers", 0))
         signals = item.get("signals", {})
         positive = sum(bool(v) for v in signals.values())
 
-        if score < 68 or edge < 0.03 or ev < 0.03:
+        if probability < 0.50 or score < 68 or edge < 0.03 or ev < 0.03:
             continue
         if books < 2:
             continue
@@ -29,20 +30,21 @@ def build_final_selection(limit: int = 10) -> dict:
             "action": action,
             "selection_reason": {
                 "master_score": score,
-                "edge": edge,
-                "ev": ev,
+                "fused_probability": probability,
+                "fused_edge": edge,
+                "fused_ev": ev,
                 "bookmakers": books,
                 "positive_signals": positive,
             },
         })
 
-    selected.sort(key=lambda x: (x["master_score"], x["edge"], x["ev"]), reverse=True)
+    selected.sort(key=lambda x: (x["master_score"], x.get("fused_edge", 0), x.get("fused_ev", 0)), reverse=True)
     selected = selected[: max(1, min(limit, 10))]
 
     return {
         "count": len(selected),
         "requested": min(limit, 10),
         "status": "OK" if selected else "NO_BET",
-        "note": "No se rellenan cupos con selecciones débiles. Si no hay suficientes candidatos, se devuelve menos de 10.",
+        "note": "La selección final exige valor de la probabilidad fusionada, consenso y señales positivas; no se rellenan cupos con selecciones débiles.",
         "opportunities": selected,
     }
