@@ -35,5 +35,4 @@ def poisson_baseline(home_goals: float, away_goals: float, max_goals: int = 12) 
     away_win = sum(home[i] * away[j] for i in range(max_goals + 1) for j in range(max_goals + 1) if i < j) / total
     over_2_5 = sum(home[i] * away[j] for i in range(max_goals + 1) for j in range(max_goals + 1) if i + j >= 3) / total
     btts_yes = sum(home[i] * away[j] for i in range(1, max_goals + 1) for j in range(1, max_goals + 1)) / total
-
     return PoissonBaseline(home_goals, away_goals, home_win, draw, away_win, over_2_5, btts_yes)
