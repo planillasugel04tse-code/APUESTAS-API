@@ -19,38 +19,27 @@ TARGET_LEAGUES = {
 
 
 def _iso(value: Any) -> str:
-    if not value:
-        return datetime.now(timezone.utc).isoformat()
-    return str(value)
+    return str(value) if value else datetime.now(timezone.utc).isoformat()
 
 
-def leagues() -> list[dict[str, Any]]:
-    return []
+async def fetch_leagues() -> list[dict[str, Any]]:
+    payload = await fetch_json("odds-api-io", "/v3/leagues", {"sport": "football", "all": "true"})
+    return payload if isinstance(payload, list) else []
 
 
 async def fetch_events(league: str, status: str = "pending", limit: int = 100) -> list[NormalizedMatch]:
-    payload = await fetch_json(
-        "odds-api-io",
-        "/v3/events",
-        {"sport": "football", "league": league, "status": status, "limit": limit},
-    )
+    payload = await fetch_json("odds-api-io", "/v3/events", {"sport": "football", "league": league, "status": status, "limit": limit})
     items = payload if isinstance(payload, list) else payload.get("events", [])
     competition = TARGET_LEAGUES.get(league, normalize_competition(league))
     return [
-        NormalizedMatch(
-            external_id=str(item["id"]),
-            competition=competition,
-            home_team=str(item.get("home", "")),
-            away_team=str(item.get("away", "")),
-            kickoff=_iso(item.get("date")),
-        )
+        NormalizedMatch(str(item["id"]), competition, str(item["home"]), str(item["away"]), _iso(item.get("date")))
         for item in items
         if item.get("id") is not None and item.get("home") and item.get("away")
     ]
 
 
 async def fetch_live_events() -> list[NormalizedMatch]:
-    payload = await fetch_json("odds-api-io", "/v3/events/live", {"sport": "football"})
+    payload = await fetch_json("odds-api-io", "/events/live", {"sport": "football"})
     items = payload if isinstance(payload, list) else payload.get("events", [])
     result: list[NormalizedMatch] = []
     for item in items:
