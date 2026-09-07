@@ -1,3 +1,4 @@
+from betano_analyzer.ingest import normalize_market
 from betano_analyzer.oddspapi_io import parse_odds
 
 
@@ -36,10 +37,12 @@ def test_parse_oddspapi_betano_odds():
 
     assert len(rows) == 3
     assert rows[0].bookmaker == "betano.pe"
-    assert rows[0].market == "Full Time Result"
-    assert rows[0].selection == "1"
+    assert rows[0].market == "1x2_ft"
+    assert rows[0].selection == "home"
     assert rows[0].odds == 2.10
-    assert rows[2].market == "Over Under Full Time 2.5"
+    assert rows[1].selection == "draw"
+    assert rows[2].market == "goals_ft"
+    assert rows[2].selection == "over"
     assert rows[2].line == 2.5
 
 
@@ -65,7 +68,15 @@ def test_parse_oddspapi_uses_catalog_line_when_bookmaker_id_has_no_line():
     rows = parse_odds(payload, market_catalog=catalog)
 
     assert len(rows) == 1
+    assert rows[0].market == "goals_ft"
+    assert rows[0].selection == "over"
     assert rows[0].line == 2.5
+
+
+def test_normalize_market_keeps_periods_separate():
+    assert normalize_market("Over Under", "Over", "fulltime") == ("goals_ft", "over")
+    assert normalize_market("Over Under", "Over", "1st half") == ("goals_1h", "over")
+    assert normalize_market("Full Time Result", "1", "fulltime") == ("1x2_ft", "home")
 
 
 def test_parse_oddspapi_ignores_suspended_bookmaker():
