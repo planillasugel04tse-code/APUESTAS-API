@@ -14,6 +14,7 @@ from .providers import provider_status
 from .radar import build_radar
 from .radar_value import build_value_radar
 from .master_radar import build_master_radar
+from .final_selector import build_final_selection
 from .schemas import BetCreate, BetSettle, MatchCreate, OddsCreate, PickCreate, PickResultCreate, TipsterCreate
 from .sync_service import sync_odds
 
@@ -146,6 +147,11 @@ def master_radar(limit: int = Query(default=20, ge=1, le=100)):
     return build_master_radar(limit=limit)
 
 
+@router.get("/final-selection")
+def final_selection(limit: int = Query(default=10, ge=1, le=10)):
+    return build_final_selection(limit=limit)
+
+
 @router.get("/arbitrage")
 def arbitrage(limit: int = Query(default=100, ge=1, le=500)):
     return {"opportunities": [item.__dict__ for item in find_arbitrage(limit)]}
@@ -172,4 +178,4 @@ def movements(match_id: int | None = None):
 
 @router.get("/dashboard/periods")
 def dashboard_periods():
-    return {"periods": [{"id":"hoy","label":"HOY"},{"id":"lunes-viernes","label":"LUNES A VIERNES"},{"id":"sabado-domingo","label":"SÁBADO DOMINGO"},{"id":"mes","label":"MES"},{"id":"3-meses","label":"3 MESES"},{"id":"6-meses","label":"6 MESES"},{"id":"todos","label":"TODOS"}]}
+    return {"periods": [{"id":"hoy","label":"HOY"},{"id":"lunes-viernes","label":"LUNES A VIERNES"},{"id":"sabado-domingo","label":"SABADO DOMINGO"},{"id":"mes","label":"MES"},{"id":"3-meses","label":"3 MESES"},{"id":"6-meses","label":"6 MESES"},{"id":"todos","label":"TODOS"}]}
