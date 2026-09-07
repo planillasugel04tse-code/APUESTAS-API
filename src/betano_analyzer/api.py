@@ -15,6 +15,7 @@ from .radar import build_radar
 from .radar_value import build_value_radar
 from .master_radar import build_master_radar
 from .final_selector import build_final_selection
+from .conservative_engine import transform
 from .schemas import BetCreate, BetSettle, MatchCreate, OddsCreate, PickCreate, PickResultCreate, TipsterCreate
 from .sync_service import sync_odds
 
@@ -108,6 +109,12 @@ def settle_bet(bet_id: int, data: BetSettle):
         db.execute("UPDATE bets SET result=?, cashout=?, settled_at=? WHERE id=?", (data.result, data.cashout, settled_at, bet_id))
         updated = db.execute("SELECT * FROM bets WHERE id = ?", (bet_id,)).fetchone()
         return dict(updated)
+
+
+@router.get("/conservative-preview")
+def conservative_preview(market: str, selection: str):
+    result = transform(market, selection)
+    return {"original_market": result.original_market, "original_selection": result.original_selection, "conservative_market": result.conservative_market, "conservative_selection": result.conservative_selection, "changed": (result.original_market, result.original_selection) != (result.conservative_market, result.conservative_selection), "rule": result.rule}
 
 
 @router.get("/tipsters/performance")
