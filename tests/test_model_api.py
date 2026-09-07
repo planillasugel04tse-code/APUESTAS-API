@@ -17,3 +17,8 @@ def test_model_endpoints_are_exposed():
     mc = client.get('/api/v1/model/monte-carlo', params={'home_goals': 1.4, 'away_goals': 1.1, 'simulations': 1000})
     assert mc.status_code == 200
     assert abs(mc.json()['home_win'] + mc.json()['draw'] + mc.json()['away_win'] - 1) < 0.001
+
+
+def test_oddspapi_sync_endpoint_is_exposed():
+    paths = {route.path for route in app.routes}
+    assert '/api/v1/oddspapi/sync' in paths
