@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
+from .dashboard import Period, period_range
 from .db import connect
 from .schemas import BetCreate, MatchCreate, PickCreate
 
@@ -12,6 +13,11 @@ router = APIRouter(prefix="/api/v1")
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def date_filters(period: Period):
+    start, end = period_range(period)
+    return start.isoformat() if start else None, end.isoformat() if end else None
 
 
 @router.post("/matches")
@@ -44,26 +50,57 @@ def create_bet(data: BetCreate):
             VALUES(?,?,?,?,?,?,?,?)""",
             (*data.model_dump().values(),),
         )
-        potential_return = data.stake * data.odds
-        return {"id": cur.lastrowid, **data.model_dump(), "potential_return": potential_return}
+        return {"id": cur.lastrowid, **data.model_dump(), "potential_return": data.stake * data.odds}
 
 
 @router.get("/bets/summary")
-def bets_summary():
+def bets_summary(period: Period = Query(default=Period.TODOS)):
+    start, end = date_filters(period)
     with connect() as db:
-        rows = db.execute("SELECT stake, odds, result, cashout FROM bets").fetchall()
-    stake = sum(r["stake"] for r in rows)
+        query = "SELECT stake, odds, result, cashout, placed_at FROM bets"
+        params = []
+        clauses = []
+        if start:
+            clauses.append("date(placed_at) >= date(?)")
+            params.append(start)
+        if end:
+            clauses.append("date(placed_at) <= date(?)")
+            params.append(end)
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        rows = db.execute(query, params).fetchall()
+
     settled = [r for r in rows if r["result"] != "pending"]
     wins = sum(1 for r in settled if r["result"] == "won")
     losses = sum(1 for r in settled if r["result"] == "lost")
+    settled_stake = sum(r["stake"] for r in settled)
     returns = sum((r["stake"] * r["odds"] if r["result"] == "won" else r["cashout"] or 0) for r in settled)
+    net = returns - settled_stake
     return {
+        "period": period.value,
+        "from": start,
+        "to": end,
         "bets": len(rows),
         "settled": len(settled),
         "wins": wins,
         "losses": losses,
-        "stake": stake,
+        "pending": len(rows) - len(settled),
+        "stake": sum(r["stake"] for r in rows),
         "returns": returns,
-        "net": returns - sum(r["stake"] for r in settled),
+        "net": net,
+        "roi": net / settled_stake if settled_stake else 0,
         "hit_rate": wins / len(settled) if settled else 0,
     }
+
+
+@router.get("/dashboard/periods")
+def dashboard_periods():
+    return {"periods": [
+        {"id": "hoy", "label": "HOY"},
+        {"id": "lunes-viernes", "label": "LUNES A VIERNES"},
+        {"id": "sabado-domingo", "label": "SÁBADO Y DOMINGO"},
+        {"id": "mes", "label": "MES"},
+        {"id": "3-meses", "label": "3 MESES"},
+        {"id": "6-meses", "label": "6 MESES"},
+        {"id": "todos", "label": "TODOS"},
+    ]}
