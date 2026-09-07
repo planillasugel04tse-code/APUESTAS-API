@@ -72,7 +72,7 @@ def build_master_radar(limit: int = 20) -> dict:
         value_by_key[key] = item
 
     match_ids = {key[0] for key in value_by_key}
-    movement: dict[int, float] = defaultdict(float)
+    movement: dict[tuple, float] = defaultdict(float)
     history: dict[tuple, float] = {}
     with connect() as db:
         if match_ids:
@@ -83,7 +83,7 @@ def build_master_radar(limit: int = 20) -> dict:
                 key = (row["match_id"], str(row["market"]).lower(), str(row["selection"]).lower(), row["line"])
                 old = previous.get(key)
                 if old and old > 0:
-                    movement[row["match_id"]] = max(movement[row["match_id"]], float(row["odds"]) / old - 1)
+                    movement[key] = float(row["odds"]) / old - 1
                 previous[key] = float(row["odds"])
         history_rows = db.execute("""SELECT p.match_id, COALESCE(p.conservative_market,p.original_market) AS market, COALESCE(p.conservative_selection,p.original_selection) AS selection, SUM(pr.result='won') AS wins, COUNT(*) AS total FROM pick_results pr JOIN picks p ON p.id=pr.pick_id WHERE pr.result IN ('won','lost','push') GROUP BY p.match_id, market, selection""").fetchall()
         for row in history_rows:
@@ -97,7 +97,7 @@ def build_master_radar(limit: int = 20) -> dict:
             consensus = int(v.get("bookmakers", 0) or 0)
             model_edge = float(b.get("edge", 0.0) or 0.0)
             model_conf = float(b.get("confidence", 0.0) or 0.0)
-            move = movement.get(key[0], 0.0)
+            move = movement.get(key, 0.0)
             hist = history.get((key[0], key[1], key[2]), 0.0)
             tip_signal, tipsters, tipster_picks = _tipster_signal(db, key[0], key[1], key[2])
             clv = _clv_signal(db, key[0], key[1], key[2], key[3])
