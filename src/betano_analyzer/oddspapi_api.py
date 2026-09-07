@@ -2,9 +2,19 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
+from .oddspapi_io import fetch_account
 from .sync_service import sync_oddspapi_betano_pe
 
 router = APIRouter(prefix="/api/v1/oddspapi", tags=["oddspapi"])
+
+
+@router.get("/account")
+async def oddspapi_account():
+    """Return OddsPapi account/quota state without consuming quota."""
+    try:
+        return await fetch_account()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post("/sync")
