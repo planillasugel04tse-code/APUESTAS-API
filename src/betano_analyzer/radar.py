@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import datetime, timezone
 
-from .db import connect
+from .db import connect, initialize
 from .opportunities import score_opportunity
 
 
@@ -50,10 +50,11 @@ def _market_weights(db) -> dict[tuple[str, str], tuple[float, int]]:
 
 def build_radar(limit: int = 20) -> dict:
     now = datetime.now(timezone.utc)
+    initialize()
     with connect() as db:
         matches = db.execute("SELECT id, competition, home_team, away_team, kickoff, status FROM matches WHERE status='scheduled'").fetchall()
         picks = db.execute("SELECT p.*, t.name AS tipster_name, t.source AS tipster_source FROM picks p LEFT JOIN tipsters t ON t.id=p.tipster_id").fetchall()
-        odds = db.execute("SELECT match_id, bookmaker, market, selection, odds, captured_at FROM odds").fetchall()
+        odds = db.execute("SELECT match_id, bookmaker, market, selection, odds, captured_at, line FROM odds").fetchall()
         weight_cache = {}
         market_cache = _market_weights(db)
         pick_groups = defaultdict(list); odd_groups = defaultdict(list)
@@ -76,13 +77,13 @@ def build_radar(limit: int = 20) -> dict:
                 selection = pick["conservative_selection"] or pick["original_selection"]
                 probability = pick["probability"]
                 confidence = pick["confidence"]
-                # A confidence label is not treated as a calibrated probability unless explicitly supplied.
                 if probability is None: continue
                 stored_odds = pick["conservative_odds"] or pick["original_odds"]
                 if stored_odds is None: continue
                 key = (market.strip().lower(), selection.strip().lower())
                 market_odds = [r["odds"] for r in odd_groups[match["id"]]
-                               if r["market"].strip().lower() == market.strip().lower() and r["selection"].strip().lower() == selection.strip().lower()]
+                               if r["market"].strip().lower() == market.strip().lower()
+                               and r["selection"].strip().lower() == selection.strip().lower()]
                 best_odds = max(market_odds, default=stored_odds)
                 scored = score_opportunity(match_id=match["id"], match=f'{match["home_team"]} vs {match["away_team"]}',
                     market=market, selection=selection, odds=best_odds, model_probability=probability,
