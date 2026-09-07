@@ -47,7 +47,8 @@ CREATE TABLE IF NOT EXISTS odds (
     market TEXT NOT NULL,
     selection TEXT NOT NULL,
     odds REAL NOT NULL,
-    captured_at TEXT NOT NULL
+    captured_at TEXT NOT NULL,
+    line REAL
 );
 
 CREATE TABLE IF NOT EXISTS bets (
@@ -80,11 +81,23 @@ CREATE TABLE IF NOT EXISTS pick_results (
     actual_odds REAL,
     notes TEXT
 );
+
+CREATE TABLE IF NOT EXISTS pick_strategy_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pick_id INTEGER NOT NULL REFERENCES picks(id),
+    strategy TEXT NOT NULL,
+    result TEXT NOT NULL,
+    settled_at TEXT NOT NULL,
+    actual_odds REAL,
+    notes TEXT,
+    UNIQUE(pick_id, strategy)
+);
 """
 
 MIGRATIONS = (
     "ALTER TABLE picks ADD COLUMN probability REAL",
     "ALTER TABLE picks ADD COLUMN probability_source TEXT",
+    "ALTER TABLE odds ADD COLUMN line REAL",
 )
 
 
