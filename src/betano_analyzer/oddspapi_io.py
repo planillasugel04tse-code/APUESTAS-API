@@ -81,14 +81,17 @@ async def fetch_fixtures(
     for item in items:
         if not isinstance(item, dict):
             continue
-        tournament = str(item.get("tournamentName") or item.get("tournamentSlug") or "")
-        competition = normalize_competition(tournament)
+        slug = str(item.get("tournamentSlug") or "").strip().lower()
+        if slug not in TARGET_TOURNAMENT_SLUGS:
+            continue
+        tournament = str(item.get("tournamentName") or slug)
+        competition = TARGET_TOURNAMENT_SLUGS[slug]
         if not item.get("fixtureId") or not item.get("participant1Name") or not item.get("participant2Name"):
             continue
         result.append(
             NormalizedMatch(
                 str(item["fixtureId"]),
-                competition,
+                normalize_competition(competition),
                 str(item["participant1Name"]),
                 str(item["participant2Name"]),
                 _iso(item.get("startTime")),
@@ -118,8 +121,6 @@ def _market_catalog(
             handicap_value = float(handicap) if handicap is not None else None
         except (TypeError, ValueError):
             handicap_value = _line_from_text(market_name)
-        if handicap_value == 0:
-            handicap_value = 0.0
         market_meta[market_id] = (
             market_name,
             handicap_value,
@@ -145,7 +146,9 @@ def parse_odds(
         return []
     market_meta, outcome_names = _market_catalog(market_catalog or [])
     bookmaker_data = (payload.get("bookmakerOdds") or {}).get(bookmaker)
-    if not isinstance(bookmaker_data, dict) or bookmaker_data.get("suspended"):
+    if not isinstance(bookmaker_data, dict):
+        return []
+    if bookmaker_data.get("suspended") or not bookmaker_data.get("bookmakerIsActive", True):
         return []
 
     captured = _iso(payload.get("updatedAt"))
