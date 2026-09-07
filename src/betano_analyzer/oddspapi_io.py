@@ -29,6 +29,13 @@ def _iso(value: Any) -> str:
     return str(value) if value else datetime.now(timezone.utc).isoformat()
 
 
+def _line_from_text(value: Any) -> float | None:
+    if value is None:
+        return None
+    match = re.search(r"(?<!\d)(-?\d+(?:\.\d+)?)(?:/|\s|$)", str(value))
+    return float(match.group(1)) if match else None
+
+
 def _line_from_outcome_id(value: Any) -> float | None:
     if value is None:
         return None
@@ -90,20 +97,41 @@ async def fetch_fixtures(
     return result
 
 
-def _market_catalog(catalog: list[dict[str, Any]]) -> tuple[dict[int, str], dict[tuple[int, int], str]]:
-    market_names: dict[int, str] = {}
+def _market_catalog(
+    catalog: list[dict[str, Any]],
+) -> tuple[dict[int, tuple[str, float | None, str, str]], dict[tuple[int, int], str]]:
+    """Return market metadata plus outcome labels.
+
+    The handicap/line belongs to the market in OddsPapi's catalog for many
+    markets (for example Over/Under 2.5), while some bookmaker outcome IDs also
+    encode the line. We retain both so the parser can use the most precise value.
+    """
+    market_meta: dict[int, tuple[str, float | None, str, str]] = {}
     outcome_names: dict[tuple[int, int], str] = {}
     for market in catalog:
         if not isinstance(market, dict) or market.get("marketId") is None:
             continue
         market_id = int(market["marketId"])
-        market_names[market_id] = str(market.get("marketName") or market.get("marketType") or market_id)
+        market_name = str(market.get("marketName") or market.get("marketType") or market_id)
+        handicap = market.get("handicap")
+        try:
+            handicap_value = float(handicap) if handicap is not None else None
+        except (TypeError, ValueError):
+            handicap_value = _line_from_text(market_name)
+        if handicap_value == 0:
+            handicap_value = 0.0
+        market_meta[market_id] = (
+            market_name,
+            handicap_value,
+            str(market.get("period") or ""),
+            str(market.get("marketType") or ""),
+        )
         for outcome in market.get("outcomes") or []:
             if isinstance(outcome, dict) and outcome.get("outcomeId") is not None:
                 outcome_names[(market_id, int(outcome["outcomeId"]))] = str(
                     outcome.get("outcomeName") or outcome["outcomeId"]
                 )
-    return market_names, outcome_names
+    return market_meta, outcome_names
 
 
 def parse_odds(
@@ -115,8 +143,7 @@ def parse_odds(
     fixture_id = payload.get("fixtureId")
     if fixture_id is None:
         return []
-    catalog = _market_catalog(market_catalog or [])
-    market_names, outcome_names = catalog
+    market_meta, outcome_names = _market_catalog(market_catalog or [])
     bookmaker_data = (payload.get("bookmakerOdds") or {}).get(bookmaker)
     if not isinstance(bookmaker_data, dict) or bookmaker_data.get("suspended"):
         return []
@@ -130,7 +157,9 @@ def parse_odds(
             market_id_int = int(market_id)
         except (TypeError, ValueError):
             market_id_int = 0
-        market_name = market_names.get(market_id_int, f"market:{market_id}")
+        meta = market_meta.get(market_id_int)
+        market_name = meta[0] if meta else f"market:{market_id}"
+        catalog_line = meta[1] if meta else None
         for outcome_id, outcome in (market.get("outcomes") or {}).items():
             if not isinstance(outcome, dict):
                 continue
@@ -139,7 +168,7 @@ def parse_odds(
             except (TypeError, ValueError):
                 outcome_id_int = 0
             selection_name = outcome_names.get((market_id_int, outcome_id_int), str(outcome_id))
-            for player_id, player in (outcome.get("players") or {}).items():
+            for player in (outcome.get("players") or {}).values():
                 if not isinstance(player, dict) or not player.get("active", True):
                     continue
                 try:
@@ -150,6 +179,8 @@ def parse_odds(
                     continue
                 outcome_key = player.get("bookmakerOutcomeId") or selection_name
                 line = _line_from_outcome_id(outcome_key)
+                if line is None:
+                    line = catalog_line
                 selection = selection_name
                 if player.get("playerName"):
                     selection = f"{selection_name}:{player['playerName']}"
