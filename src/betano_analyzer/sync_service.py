@@ -18,6 +18,7 @@ class SyncSummary:
     odds_saved: int
     live_matches_seen: int = 0
     live_matches_saved: int = 0
+    bookmakers: tuple[str, ...] = ()
 
 
 async def sync_odds(bookmakers: list[str], include_live: bool = False, limit_per_league: int = 100) -> SyncSummary:
@@ -40,7 +41,16 @@ async def sync_odds(bookmakers: list[str], include_live: bool = False, limit_per
             odds_seen += live_odds_seen
             odds_saved += live_odds_saved
 
-    return SyncSummary(len(TARGET_LEAGUES), matches_seen, matches_saved, odds_seen, odds_saved, live_seen, live_saved)
+    return SyncSummary(
+        len(TARGET_LEAGUES),
+        matches_seen,
+        matches_saved,
+        odds_seen,
+        odds_saved,
+        live_seen,
+        live_saved,
+        tuple(bookmakers),
+    )
 
 
 async def sync_oddspapi_betano_pe(
@@ -49,11 +59,11 @@ async def sync_oddspapi_betano_pe(
     limit_matches: int = 20,
     include_live: bool = False,
 ) -> SyncSummary:
-    """Import a bounded Betano PE window through OddsPapi.
+    """Import Betano PE through OddsPapi.
 
-    The bounded limit is intentional: each fixture odds request is a billable
-    API call on OddsPapi, so the sync should be predictable and safe to run
-    manually from the local dashboard.
+    OddsPapi's current documented bookmaker slug is ``betano.pe``. Keep this
+    provider-specific function explicit so regional feeds are never silently
+    mixed with another country.
     """
     if hours < 1 or hours > 48:
         raise ValueError("hours debe estar entre 1 y 48")
@@ -64,8 +74,6 @@ async def sync_oddspapi_betano_pe(
     end = now + timedelta(hours=hours)
     statuses = [0, 1] if include_live else [0]
 
-    # One catalog request is reused for every fixture. OddsPapi documents the
-    # market catalog as the source of market name, handicap and period metadata.
     market_catalog = await fetch_market_catalog()
     pending_matches = []
     live_matches = []
@@ -108,4 +116,5 @@ async def sync_oddspapi_betano_pe(
         odds_saved=odds_saved,
         live_matches_seen=live_seen,
         live_matches_saved=live_seen,
+        bookmakers=(ODDSPAPI_BETANO_PE,),
     )
