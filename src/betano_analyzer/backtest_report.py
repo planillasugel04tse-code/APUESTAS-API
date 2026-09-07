@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from .db import connect
 from .dashboard import Period, period_range
 
@@ -28,8 +30,7 @@ def _actual_summary(rows: list[dict]) -> dict:
     returns = sum(
         float(r["stake"]) * float(r["odds"]) if r["result"] == "won"
         else float(r["stake"]) if r["result"] == "push"
-        else float(r.get("cashout") or 0)
-        if r["result"] == "cashout" else 0.0
+        else float(r.get("cashout") or 0) if r["result"] == "cashout" else 0.0
         for r in settled
     )
     net = returns - stake
@@ -58,7 +59,7 @@ def _grouped_actual(rows: list[dict]) -> list[dict]:
     return sorted(out, key=lambda x: (x["bets"] >= 30, x["roi"]), reverse=True)
 
 
-def build_backtest_report(period: Period = Period.TODOS) -> dict:
+def build_backtest_report(period: Period = Period.TODOS, db_path: str | Path | None = None) -> dict:
     start, end = period_range(period)
     clauses = ["p.result IN ('won','lost','push')"]
     bet_clauses = ["b.result IN ('won','lost','push','cashout')"]
@@ -75,7 +76,7 @@ def build_backtest_report(period: Period = Period.TODOS) -> dict:
         bet_clauses.append("date(COALESCE(b.settled_at,b.placed_at)) <= date(?)")
         bet_params.append(end.isoformat())
 
-    with connect() as db:
+    with connect(db_path or "betano_analyzer.sqlite3") as db:
         rows = db.execute(f"""
             SELECT m.competition, p.id AS pick_id,
                    pk.original_market, pk.original_odds,
