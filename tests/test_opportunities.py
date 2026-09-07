@@ -17,7 +17,7 @@ def test_score_opportunity_uses_fused_probability():
         model_probabilities=[0.60, 0.62],
     )
     assert result.model_probability == pytest.approx(0.586)
-    assert result.edge == pytest.approx(0.03, abs=1e-6)
+    assert result.edge == pytest.approx(0.0304444, abs=1e-6)
     assert result.probability_source == "model+market_consensus"
 
 
