@@ -60,6 +60,24 @@ CREATE TABLE IF NOT EXISTS bets (
     placed_at TEXT NOT NULL,
     settled_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS source_configs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    kind TEXT NOT NULL,
+    base_url TEXT,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    notes TEXT
+);
+
+CREATE TABLE IF NOT EXISTS pick_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pick_id INTEGER NOT NULL UNIQUE REFERENCES picks(id),
+    result TEXT NOT NULL,
+    settled_at TEXT NOT NULL,
+    actual_odds REAL,
+    notes TEXT
+);
 """
 
 
