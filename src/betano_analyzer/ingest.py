@@ -33,6 +33,7 @@ class NormalizedOdd:
     selection: str
     odds: float
     captured_at: str
+    line: float | None = None
 
 
 def normalize_competition(value: str) -> str:
@@ -61,8 +62,10 @@ def normalize_market(market: str, selection: str) -> tuple[str, str]:
     aliases = {
         "match winner": "1x2",
         "moneyline": "1x2",
+        "ml": "1x2",
         "double chance": "double_chance",
         "total goals": "goals",
+        "totals": "goals",
         "over/under": "goals",
         "total corners": "corners",
         "both teams to score": "btts",
