@@ -67,20 +67,25 @@ async def sync_oddspapi_betano_pe(
     # One catalog request is reused for every fixture. OddsPapi documents the
     # market catalog as the source of market name, handicap and period metadata.
     market_catalog = await fetch_market_catalog()
-    matches = []
+    pending_matches = []
+    live_matches = []
     for status_id in statuses:
-        matches.extend(
-            await fetch_fixtures(
-                from_time=now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                to_time=end.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                status_id=status_id,
-                bookmaker=ODDSPAPI_BETANO_PE,
-            )
+        found = await fetch_fixtures(
+            from_time=now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            to_time=end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            status_id=status_id,
+            bookmaker=ODDSPAPI_BETANO_PE,
         )
+        if status_id == 1:
+            live_matches.extend(found)
+        else:
+            pending_matches.extend(found)
 
-    # De-duplicate in case a provider changes status while the two calls run.
-    unique = {match.external_id: match for match in filter_competitions(matches)}
+    all_matches = pending_matches + live_matches
+    unique = {match.external_id: match for match in filter_competitions(all_matches)}
     selected_matches = list(unique.values())[:limit_matches]
+    selected_live_ids = {match.external_id for match in live_matches} & set(unique)
+
     matches_seen, matches_saved = save_matches(selected_matches)
 
     odds = []
@@ -94,13 +99,13 @@ async def sync_oddspapi_betano_pe(
         )
     odds_seen, odds_saved = save_odds(odds)
 
-    live_count = sum(1 for match in selected_matches if match in matches and include_live)
+    live_seen = sum(match.external_id in selected_live_ids for match in selected_matches)
     return SyncSummary(
         leagues=8,
         matches_seen=matches_seen,
         matches_saved=matches_saved,
         odds_seen=odds_seen,
         odds_saved=odds_saved,
-        live_matches_seen=live_count,
-        live_matches_saved=live_count,
+        live_matches_seen=live_seen,
+        live_matches_saved=live_seen,
     )
