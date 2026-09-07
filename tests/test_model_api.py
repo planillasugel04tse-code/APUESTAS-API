@@ -20,6 +20,9 @@ def test_model_endpoints_are_exposed():
 
 
 def test_oddspapi_endpoints_are_exposed():
-    paths = {route.path for route in app.routes}
+    client = TestClient(app)
+    openapi = client.get('/openapi.json')
+    assert openapi.status_code == 200
+    paths = openapi.json()['paths']
     assert '/api/v1/oddspapi/account' in paths
     assert '/api/v1/oddspapi/sync' in paths
