@@ -13,6 +13,7 @@ from .market_performance import performance_by_competition_market
 from .providers import provider_status
 from .radar import build_radar
 from .radar_value import build_value_radar
+from .master_radar import build_master_radar
 from .schemas import BetCreate, BetSettle, MatchCreate, OddsCreate, PickCreate, PickResultCreate, TipsterCreate
 from .sync_service import sync_odds
 
@@ -138,6 +139,11 @@ def opportunities(limit: int = Query(default=20, ge=1, le=100)):
 @router.get("/value-radar")
 def value_radar(limit: int = Query(default=20, ge=1, le=100)):
     return build_value_radar(limit=limit)
+
+
+@router.get("/master-radar")
+def master_radar(limit: int = Query(default=20, ge=1, le=100)):
+    return build_master_radar(limit=limit)
 
 
 @router.get("/arbitrage")
