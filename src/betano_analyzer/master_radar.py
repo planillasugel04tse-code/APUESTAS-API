@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections import defaultdict
 
+from .calibration import calibration_report
+from .calibration_gate import apply_calibration_gate
 from .db import connect
 from .probability_fusion import fuse_probabilities
 from .radar_value import build_value_radar
@@ -10,6 +12,38 @@ from .radar import build_radar
 
 def _clamp(value: float, low: float = 0.0, high: float = 100.0) -> float:
     return max(low, min(high, value))
+
+
+def _calibration_reports(db) -> dict[str, object]:
+    rows = db.execute(
+        """SELECT COALESCE(p.probability_source, 'unknown') AS source,
+                  p.probability, pr.result
+           FROM picks p
+           JOIN pick_results pr ON pr.pick_id=p.id
+           WHERE p.probability IS NOT NULL
+             AND p.probability > 0 AND p.probability < 1
+             AND pr.result IN ('won','lost')
+           ORDER BY pr.settled_at"""
+    ).fetchall()
+    grouped: dict[str, tuple[list[float], list[int]]] = {}
+    all_probabilities: list[float] = []
+    all_outcomes: list[int] = []
+    for row in rows:
+        source = str(row["source"])
+        probability = float(row["probability"])
+        outcome = 1 if row["result"] == "won" else 0
+        grouped.setdefault(source, ([], []))[0].append(probability)
+        grouped[source][1].append(outcome)
+        all_probabilities.append(probability)
+        all_outcomes.append(outcome)
+
+    reports: dict[str, object] = {}
+    for source, (probabilities, outcomes) in grouped.items():
+        if probabilities:
+            reports[source] = calibration_report(probabilities, outcomes)
+    if all_probabilities:
+        reports["__all__"] = calibration_report(all_probabilities, all_outcomes)
+    return reports
 
 
 def _tipster_signal(db, match_id: int, market: str, selection: str) -> tuple[float, int, float]:
@@ -76,6 +110,7 @@ def build_master_radar(limit: int = 20) -> dict:
     movement: dict[tuple, float] = defaultdict(float)
     history: dict[tuple, float] = {}
     with connect() as db:
+        calibration_reports = _calibration_reports(db)
         if match_ids:
             placeholders = ",".join("?" for _ in match_ids)
             rows = db.execute(f"SELECT match_id, market, selection, line, odds, captured_at FROM odds WHERE match_id IN ({placeholders}) ORDER BY captured_at", list(match_ids)).fetchall()
@@ -119,20 +154,28 @@ def build_master_radar(limit: int = 20) -> dict:
             consensus = int(v.get("bookmakers", 0) or 0)
             model_edge = float(b.get("edge", 0.0) or 0.0)
             model_conf = float(b.get("confidence", 0.0) or 0.0)
+            calibration_report_for_source = calibration_reports.get(fused_source) or calibration_reports.get("__all__")
+            calibration_gate = apply_calibration_gate(model_conf, calibration_report_for_source)
+            adjusted_model_conf = calibration_gate.adjusted_confidence
             move = movement.get(key, 0.0)
             hist = history.get((key[0], key[1], key[2]), 0.0)
             tip_signal, tipsters, tipster_picks = _tipster_signal(db, key[0], key[1], key[2])
             clv = _clv_signal(db, key[0], key[1], key[2], key[3])
 
             score = 35 + _clamp(edge * 220, -10, 22) + _clamp(ev * 90, -5, 13)
-            score += min(consensus, 6) * 2 + _clamp(model_edge * 110, -8, 11) + _clamp(model_conf * 10, 0, 10)
+            score += min(consensus, 6) * 2 + _clamp(model_edge * 110, -8, 11) + _clamp(adjusted_model_conf * 10, 0, 10)
             score += _clamp(move * 60, -5, 5) + _clamp(tip_signal * 45, -8, 10) + _clamp(clv * 35, -8, 10)
             if hist:
                 score += _clamp((hist - 0.5) * 18, -6, 6)
+            if not calibration_gate.usable:
+                score -= 8
 
             rating = "fuerte" if score >= 80 else "interesante" if score >= 68 else "vigilar" if score >= 55 else "descartar"
             candidates.append({**v, "master_score": round(_clamp(score), 1), "rating": rating,
                                "model_edge": round(model_edge, 4), "model_confidence": round(model_conf, 4),
+                               "adjusted_model_confidence": round(adjusted_model_conf, 4),
+                               "calibration_multiplier": round(calibration_gate.confidence_multiplier, 4),
+                               "calibration_reason": calibration_gate.reason,
                                "fused_probability": round(fused_probability, 4), "fused_edge": round(fused_edge, 4),
                                "fused_ev": round(fused_ev, 4), "probability_source": fused_source,
                                "movement": round(move, 4), "historical_hit_rate": round(hist, 4),
@@ -141,10 +184,11 @@ def build_master_radar(limit: int = 20) -> dict:
                                "signals": {"value": edge >= 0.03, "consensus": consensus >= 3,
                                            "model": model_edge > 0, "fusion": fused_ev >= 0.03,
                                            "movement": move > 0, "history": hist >= 0.55,
-                                           "tipsters": tip_signal > 0, "clv": clv > 0}})
+                                           "tipsters": tip_signal > 0, "clv": clv > 0,
+                                           "calibration": calibration_gate.usable}})
 
     candidates.sort(key=lambda x: (x["master_score"], x["fused_edge"], x["bookmakers"]), reverse=True)
     return {"count": min(limit, len(candidates)),
-            "method": "fused model + market consensus + value + radar + movement + tipsters + historical results + CLV",
+            "method": "fused model + market consensus + value + radar + movement + tipsters + historical results + CLV + calibration gate",
             "warning": "master_score es un ranking de señales, no una probabilidad de acierto ni una garantía de beneficio.",
             "opportunities": candidates[: max(1, min(limit, 100))]}
