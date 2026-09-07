@@ -10,8 +10,11 @@ router = APIRouter(prefix="/api/v1")
 @router.get("/surebets")
 def surebets(
     bookmakers: str = Query(
-        default="Betano PE,Apuesta Total",
-        description="Casas a comparar, separadas por coma.",
+        default="Betano.pe,ApuestaTotal.pe,Bet365.pe",
+        description=(
+            "Casas peruanas a comparar, separadas por coma. "
+            "El identificador regional debe coincidir exactamente con los datos almacenados."
+        ),
     ),
     total_stake: float = Query(default=100.0, gt=0),
     limit: int = Query(default=50, ge=1, le=500),
