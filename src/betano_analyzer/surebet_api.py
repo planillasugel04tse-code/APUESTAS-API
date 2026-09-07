@@ -10,7 +10,7 @@ router = APIRouter(prefix="/api/v1")
 @router.get("/surebets")
 def surebets(
     bookmakers: str = Query(
-        default="Betano.pe,ApuestaTotal.pe,Bet365.pe",
+        default="Betano.pe,ApuestaTotal.pe,Bet365.pe,Betsafe.pe",
         description=(
             "Casas peruanas a comparar, separadas por coma. "
             "El identificador regional debe coincidir exactamente con los datos almacenados."
