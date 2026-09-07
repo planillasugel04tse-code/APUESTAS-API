@@ -87,6 +87,8 @@ def create_bet(data: BetCreate):
             pick = db.execute("SELECT id FROM picks WHERE id = ?", (data.pick_id,)).fetchone()
             if not pick:
                 raise HTTPException(status_code=404, detail="Pick no encontrado")
+        if data.result in {"won", "lost", "push", "cashout"} and data.result == "cashout" and data.cashout is None:
+            raise HTTPException(status_code=422, detail="Una apuesta cashout requiere importe de cashout")
         cur = db.execute(
             """INSERT INTO bets(match_id,pick_id,selection,odds,stake,result,cashout,placed_at)
             VALUES(?,?,?,?,?,?,?,?)""",
@@ -97,6 +99,8 @@ def create_bet(data: BetCreate):
 
 @router.patch("/bets/{bet_id}/settle")
 def settle_bet(bet_id: int, data: BetSettle):
+    if data.result == "cashout" and data.cashout is None:
+        raise HTTPException(status_code=422, detail="Una apuesta cashout requiere importe de cashout")
     settled_at = data.settled_at or now()
     with connect() as db:
         cur = db.execute(
@@ -130,7 +134,8 @@ def bets_summary(period: Period = Query(default=Period.TODOS)):
     wins = sum(1 for r in settled if r["result"] == "won")
     losses = sum(1 for r in settled if r["result"] == "lost")
     pushes = sum(1 for r in settled if r["result"] == "push")
-    settled_stake = sum(r["stake"] for r in settled if r["result"] != "cashout")
+    cashouts = sum(1 for r in settled if r["result"] == "cashout")
+    settled_stake = sum(r["stake"] for r in settled)
     returns = sum(
         r["stake"] * r["odds"] if r["result"] == "won"
         else r["stake"] if r["result"] == "push"
@@ -148,8 +153,10 @@ def bets_summary(period: Period = Query(default=Period.TODOS)):
         "wins": wins,
         "losses": losses,
         "pushes": pushes,
+        "cashouts": cashouts,
         "pending": len(rows) - len(settled),
         "stake": sum(r["stake"] for r in rows),
+        "settled_stake": settled_stake,
         "returns": returns,
         "net": net,
         "roi": net / settled_stake if settled_stake else 0,
