@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query
 
+from .arbitrage import find_arbitrage
 from .backtest_report import build_backtest_report
 from .dashboard import Period, period_range
 from .db import connect
@@ -133,6 +134,11 @@ def opportunities(limit: int = Query(default=20, ge=1, le=100)):
     return build_radar(limit=limit)
 
 
+@router.get("/arbitrage")
+def arbitrage(limit: int = Query(default=100, ge=1, le=500)):
+    return {"opportunities": [item.__dict__ for item in find_arbitrage(limit)]}
+
+
 @router.get("/providers")
 def providers():
     return {"providers": provider_status()}
@@ -154,4 +160,4 @@ def movements(match_id: int | None = None):
 
 @router.get("/dashboard/periods")
 def dashboard_periods():
-    return {"periods": [{"id":"hoy","label":"HOY"},{"id":"lunes-viernes","label":"LUNES A VIERNES"},{"id":"sabado-domingo","label":"SÁBADO Y DOMINGO"},{"id":"mes","label":"MES"},{"id":"3-meses","label":"3 MESES"},{"id":"6-meses","label":"6 MESES"},{"id":"todos","label":"TODOS"}]}
+    return {"periods": [{"id":"hoy","label":"HOY"},{"id":"lunes-viernes","label":"LUNES A VIERNES"},{"id":"sabado-domingo","label":"SÁBADO DOMINGO"},{"id":"mes","label":"MES"},{"id":"3-meses","label":"3 MESES"},{"id":"6-meses","label":"6 MESES"},{"id":"todos","label":"TODOS"}]}
