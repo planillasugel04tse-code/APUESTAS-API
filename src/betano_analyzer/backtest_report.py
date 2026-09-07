@@ -78,7 +78,7 @@ def build_backtest_report(period: Period = Period.TODOS, db_path: str | Path | N
 
     with connect(db_path or "betano_analyzer.sqlite3") as db:
         rows = db.execute(f"""
-            SELECT m.competition, p.id AS pick_id,
+            SELECT m.competition, p.pick_id,
                    pk.original_market, pk.original_odds,
                    pk.conservative_market, pk.conservative_odds,
                    p.strategy, p.result, p.actual_odds
