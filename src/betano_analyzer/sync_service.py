@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
+from .db import connect
 from .ingestion_service import save_matches, save_odds
 from .ingest import filter_competitions
 from .oddspapi_io import ODDSPAPI_BETANO_PE, fetch_fixtures, fetch_market_catalog, fetch_odds
@@ -104,3 +105,16 @@ async def sync_oddspapi_betano_pe(
         live_matches_seen=live_seen,
         live_matches_saved=live_seen,
     )
+
+
+async def verify_oddspapi_betano_pe_match(match_id: int) -> SyncSummary:
+    """Refresh Betano PE odds for exactly one stored fixture."""
+    with connect() as db:
+        row = db.execute("SELECT external_id FROM matches WHERE id=?", (match_id,)).fetchone()
+    if not row:
+        raise ValueError("Partido no encontrado")
+
+    market_catalog = await fetch_market_catalog()
+    odds = await fetch_odds(row["external_id"], bookmaker=ODDSPAPI_BETANO_PE, market_catalog=market_catalog)
+    odds_seen, odds_saved = save_odds(odds)
+    return SyncSummary(8, 1, 0, odds_seen, odds_saved)
