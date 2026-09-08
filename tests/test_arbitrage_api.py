@@ -37,3 +37,22 @@ def test_live_endpoint_requests_live_only(monkeypatch, client):
     assert calls["hours"] == 1
     assert calls["limit_matches"] == 3
     assert response.json()["refreshed_on_demand"] is True
+
+
+def test_verify_endpoint_refreshes_only_requested_match(monkeypatch, client):
+    calls = {}
+
+    async def fake_verify(match_id):
+        calls["match_id"] = match_id
+        return SyncSummary(8, 1, 0, 3, 3, 0, 0)
+
+    monkeypatch.setattr("betano_analyzer.sync_service.verify_oddspapi_betano_pe_match", fake_verify)
+    response = client.post("/api/v1/arbitrage/verify/42", params={"limit": 5})
+
+    assert response.status_code == 200
+    assert calls["match_id"] == 42
+    body = response.json()
+    assert body["match_id"] == 42
+    assert body["odds_seen"] == 3
+    assert body["odds_saved"] == 3
+    assert body["surebet_confirmed"] is False
