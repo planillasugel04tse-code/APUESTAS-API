@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from collections import defaultdict
+from datetime import datetime, timezone
 
 from .db import connect
 
@@ -15,13 +16,22 @@ class Arbitrage:
     outcomes: dict[str, dict[str, object]]
     implied_sum: float
     profit_margin: float
+    mode: str
 
 
-def find_arbitrage(limit: int = 100) -> list[Arbitrage]:
+def find_arbitrage(limit: int = 100, *, live: bool = False) -> list[Arbitrage]:
+    """Find surebets from the latest stored prices.
+
+    Pre-match mode uses fixtures whose kickoff is still in the future.
+    Live mode uses fixtures whose kickoff has already started. Live refreshes
+    are deliberately separate so the API is only called when the user asks
+    for the live radar.
+    """
+    now = datetime.now(timezone.utc)
     with connect() as db:
         rows = db.execute(
             """SELECT o.match_id,o.bookmaker,o.market,o.selection,o.line,o.odds,
-                      m.home_team,m.away_team
+                      o.captured_at,m.home_team,m.away_team,m.kickoff
                FROM odds o JOIN matches m ON m.id=o.match_id
                WHERE o.odds > 1
                ORDER BY o.captured_at DESC"""
@@ -29,6 +39,15 @@ def find_arbitrage(limit: int = 100) -> list[Arbitrage]:
 
     groups = defaultdict(list)
     for row in rows:
+        try:
+            kickoff = datetime.fromisoformat(str(row["kickoff"]).replace("Z", "+00:00"))
+            if kickoff.tzinfo is None:
+                kickoff = kickoff.replace(tzinfo=timezone.utc)
+            is_live = kickoff <= now
+        except (TypeError, ValueError):
+            is_live = False
+        if is_live != live:
+            continue
         groups[(row["match_id"], row["market"], row["line"])].append(row)
 
     result: list[Arbitrage] = []
@@ -46,7 +65,7 @@ def find_arbitrage(limit: int = 100) -> list[Arbitrage]:
             required = {"over", "under"}
         elif market == "btts":
             required = {"yes", "no"}
-        elif market in {"spread", "handicap"}:
+        elif market in {"spread", "handicap", "asian_handicap"}:
             required = {"home", "away"}
         else:
             continue
@@ -64,6 +83,7 @@ def find_arbitrage(limit: int = 100) -> list[Arbitrage]:
                 outcomes={k: {"bookmaker": v[0], "odds": v[1]} for k, v in selected.items()},
                 implied_sum=implied_sum,
                 profit_margin=(1.0 / implied_sum) - 1.0,
+                mode="live" if live else "pre_match",
             ))
             if len(result) >= limit:
                 break
