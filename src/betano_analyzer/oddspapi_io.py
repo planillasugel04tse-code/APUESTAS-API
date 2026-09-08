@@ -101,9 +101,12 @@ def _market_catalog(markets: list[dict[str, Any]]) -> tuple[dict[int, tuple[str,
     market_meta: dict[int, tuple[str, float | None, str, str]] = {}
     outcome_names: dict[tuple[int, int], str] = {}
     for market in markets:
-        if not isinstance(market, dict) or market.get("id") is None:
+        if not isinstance(market, dict):
             continue
-        market_id = int(market["id"])
+        raw_market_id = market.get("id") if market.get("id") is not None else market.get("marketId")
+        if raw_market_id is None:
+            continue
+        market_id = int(raw_market_id)
         market_name = str(market.get("marketName") or market.get("name") or market_id)
         handicap_value = _line_from_text(market_name)
         market_meta[market_id] = (market_name, handicap_value, str(market.get("period") or ""), str(market.get("marketType") or ""))
@@ -114,7 +117,6 @@ def _market_catalog(markets: list[dict[str, Any]]) -> tuple[dict[int, tuple[str,
 
 
 def _canonical_market(market_name: str, market_type: str, period: str, selection: str) -> tuple[str, str]:
-    """Normalize by human label first, then fall back to OddsPapi marketType."""
     canonical_market, canonical_selection = normalize_market(market_name, selection, period)
     known_bases = {"1x2", "double_chance", "asian_handicap", "goals", "btts", "corners", "cards"}
     current_base = canonical_market.rsplit("_", 1)[0]
