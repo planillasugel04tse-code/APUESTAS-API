@@ -30,6 +30,15 @@ def _is_live(kickoff: object, now: datetime | None = None) -> bool:
         return False
 
 
+def _market_base(market: object) -> str:
+    """Remove the period suffix from canonical markets (e.g. goals_ft -> goals)."""
+    text = str(market or "").lower()
+    for suffix in ("_ft", "_1h", "_2h"):
+        if text.endswith(suffix):
+            return text[: -len(suffix)]
+    return text
+
+
 def find_arbitrage(limit: int = 100, *, live: bool = False, match_id: int | None = None) -> list[Arbitrage]:
     """Find surebets from stored prices, optionally restricted to one match.
 
@@ -64,13 +73,14 @@ def find_arbitrage(limit: int = 100, *, live: bool = False, match_id: int | None
             if outcome not in best or price > best[outcome][1]:
                 best[outcome] = (row["bookmaker"], price)
 
-        if market == "1x2":
+        base_market = _market_base(market)
+        if base_market == "1x2":
             required = {"home", "draw", "away"}
-        elif market in {"goals", "corners"}:
+        elif base_market in {"goals", "corners", "cards"}:
             required = {"over", "under"}
-        elif market == "btts":
+        elif base_market == "btts":
             required = {"yes", "no"}
-        elif market in {"spread", "handicap", "asian_handicap"}:
+        elif base_market in {"spread", "handicap", "asian_handicap"}:
             required = {"home", "away"}
         else:
             continue
