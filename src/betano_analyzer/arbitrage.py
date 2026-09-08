@@ -88,3 +88,42 @@ def find_arbitrage(limit: int = 100, *, live: bool = False) -> list[Arbitrage]:
             if len(result) >= limit:
                 break
     return result
+
+
+# The main API router imports find_arbitrage from this module. Register the two
+# dedicated surebet filters on that same router here, avoiding a second router
+# and keeping the live refresh explicitly on-demand.
+try:
+    from .api import router as _api_router
+
+    @_api_router.get("/arbitrage/pre-match", tags=["arbitrage"])
+    def pre_match_arbitrage(limit: int = 100):
+        return {
+            "mode": "pre_match",
+            "refresh": "stored_odds_only",
+            "opportunities": [item.__dict__ for item in find_arbitrage(limit, live=False)],
+        }
+
+    @_api_router.post("/arbitrage/live", tags=["arbitrage"])
+    async def live_arbitrage(limit: int = 100, hours: int = 1, limit_matches: int = 20):
+        from .sync_service import sync_oddspapi_betano_pe
+
+        try:
+            sync = await sync_oddspapi_betano_pe(
+                hours=hours,
+                limit_matches=limit_matches,
+                include_live=True,
+                live_only=True,
+            )
+        except (RuntimeError, ValueError) as exc:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return {
+            "mode": "live",
+            "refreshed_on_demand": True,
+            "sync": sync.__dict__,
+            "opportunities": [item.__dict__ for item in find_arbitrage(limit, live=True)],
+        }
+except ImportError:
+    # Allows direct module imports/tests without the FastAPI application.
+    pass
