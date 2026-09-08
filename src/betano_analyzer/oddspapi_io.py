@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from datetime import datetime, timezone
 from typing import Any
 
@@ -116,26 +115,70 @@ def _market_catalog(markets: list[dict[str, Any]]) -> tuple[dict[int, tuple[str,
     return market_meta, outcome_names
 
 
+_TYPE_ALIASES = {
+    "1x2": "1x2",
+    "totals": "goals",
+    "total": "goals",
+    "goals": "goals",
+    "btts": "btts",
+    "both_teams_to_score": "btts",
+    "corners": "corners",
+    "cards": "cards",
+    "asian_handicap": "asian_handicap",
+    "handicap": "asian_handicap",
+    "spread": "asian_handicap",
+}
+
+
+def _period_key(period: str, fallback_market: str) -> str:
+    text = str(period or "").strip().lower().replace("-", " ").replace("_", " ")
+    if text in {"fulltime", "full time", "ft", "match", "90", "90 minutes"}:
+        return "ft"
+    if text in {"1h", "1st half", "first half", "firsthalf", "1 half"}:
+        return "1h"
+    if text in {"2h", "2nd half", "second half", "secondhalf", "2 half"}:
+        return "2h"
+    if "1st" in text or "first" in text:
+        return "1h"
+    if "2nd" in text or "second" in text:
+        return "2h"
+    if "_" in fallback_market:
+        suffix = fallback_market.rsplit("_", 1)[-1]
+        if suffix in {"ft", "1h", "2h"}:
+            return suffix
+    return "ft"
+
+
 def _canonical_market(market_name: str, market_type: str, period: str, selection: str) -> tuple[str, str]:
     canonical_market, canonical_selection = normalize_market(market_name, selection, period)
-    known_bases = {"1x2", "double_chance", "asian_handicap", "goals", "btts", "corners", "cards"}
-    current_base = canonical_market.rsplit("_", 1)[0]
-    if current_base not in known_bases:
-        type_aliases = {
-            "1x2": "1x2", "totals": "goals", "total": "goals", "goals": "goals",
-            "btts": "btts", "both_teams_to_score": "btts", "corners": "corners",
-            "cards": "cards", "asian_handicap": "asian_handicap", "handicap": "asian_handicap",
-            "spread": "asian_handicap",
-        }
-        base = type_aliases.get(str(market_type).strip().lower())
-        if base:
-            period_key = canonical_market.rsplit("_", 1)[-1]
-            canonical_market = f"{base}_{period_key}"
-            if base in {"goals", "corners", "cards", "btts"}:
-                if canonical_selection in {"o", "over"}:
-                    canonical_selection = "over" if base != "btts" else "yes"
-                elif canonical_selection in {"u", "under"}:
-                    canonical_selection = "under" if base != "btts" else "no"
+    market_type_key = str(market_type or "").strip().lower()
+    base = _TYPE_ALIASES.get(market_type_key)
+
+    # OddsPapi's catalog marketType is authoritative when available. Some
+    # catalog names normalize to market:<id>, which must never reach storage.
+    if base:
+        period_key = _period_key(period, canonical_market)
+        canonical_market = f"{base}_{period_key}"
+
+        selection_key = str(canonical_selection or "").strip().lower()
+        if base == "1x2":
+            selection_aliases = {
+                "1": "home", "home": "home", "local": "home",
+                "x": "draw", "draw": "draw", "tie": "draw",
+                "2": "away", "away": "away", "visitor": "away",
+            }
+            canonical_selection = selection_aliases.get(selection_key, canonical_selection)
+        elif base in {"goals", "corners", "cards"}:
+            if selection_key in {"o", "over", "más", "mas"}:
+                canonical_selection = "over"
+            elif selection_key in {"u", "under", "menos"}:
+                canonical_selection = "under"
+        elif base == "btts":
+            if selection_key in {"yes", "y", "si", "sí"}:
+                canonical_selection = "yes"
+            elif selection_key in {"no", "n"}:
+                canonical_selection = "no"
+
     return canonical_market, canonical_selection
 
 
