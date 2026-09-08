@@ -48,24 +48,25 @@ async def sync_oddspapi_betano_pe(
     hours: int = 48,
     limit_matches: int = 20,
     include_live: bool = False,
+    live_only: bool = False,
 ) -> SyncSummary:
     """Import a bounded Betano PE window through OddsPapi.
 
-    The bounded limit is intentional: each fixture odds request is a billable
-    API call on OddsPapi, so the sync should be predictable and safe to run
-    manually from the local dashboard.
+    When ``live_only`` is true, only live fixtures are requested. This is used
+    by the on-demand live surebet button so normal dashboard loads do not
+    consume live odds calls.
     """
     if hours < 1 or hours > 48:
         raise ValueError("hours debe estar entre 1 y 48")
     if limit_matches < 1 or limit_matches > 50:
         raise ValueError("limit_matches debe estar entre 1 y 50")
+    if live_only and not include_live:
+        include_live = True
 
     now = datetime.now(timezone.utc)
     end = now + timedelta(hours=hours)
-    statuses = [0, 1] if include_live else [0]
+    statuses = [1] if live_only else ([0, 1] if include_live else [0])
 
-    # One catalog request is reused for every fixture. OddsPapi documents the
-    # market catalog as the source of market name, handicap and period metadata.
     market_catalog = await fetch_market_catalog()
     pending_matches = []
     live_matches = []
@@ -90,13 +91,7 @@ async def sync_oddspapi_betano_pe(
 
     odds = []
     for match in selected_matches:
-        odds.extend(
-            await fetch_odds(
-                match.external_id,
-                bookmaker=ODDSPAPI_BETANO_PE,
-                market_catalog=market_catalog,
-            )
-        )
+        odds.extend(await fetch_odds(match.external_id, bookmaker=ODDSPAPI_BETANO_PE, market_catalog=market_catalog))
     odds_seen, odds_saved = save_odds(odds)
 
     live_seen = sum(match.external_id in selected_live_ids for match in selected_matches)
