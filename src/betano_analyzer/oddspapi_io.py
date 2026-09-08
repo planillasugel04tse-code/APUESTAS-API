@@ -113,6 +113,30 @@ def _market_catalog(markets: list[dict[str, Any]]) -> tuple[dict[int, tuple[str,
     return market_meta, outcome_names
 
 
+def _canonical_market(market_name: str, market_type: str, period: str, selection: str) -> tuple[str, str]:
+    """Normalize by human label first, then fall back to OddsPapi marketType."""
+    canonical_market, canonical_selection = normalize_market(market_name, selection, period)
+    known_bases = {"1x2", "double_chance", "asian_handicap", "goals", "btts", "corners", "cards"}
+    current_base = canonical_market.rsplit("_", 1)[0]
+    if current_base not in known_bases:
+        type_aliases = {
+            "1x2": "1x2", "totals": "goals", "total": "goals", "goals": "goals",
+            "btts": "btts", "both_teams_to_score": "btts", "corners": "corners",
+            "cards": "cards", "asian_handicap": "asian_handicap", "handicap": "asian_handicap",
+            "spread": "asian_handicap",
+        }
+        base = type_aliases.get(str(market_type).strip().lower())
+        if base:
+            period_key = canonical_market.rsplit("_", 1)[-1]
+            canonical_market = f"{base}_{period_key}"
+            if base in {"goals", "corners", "cards", "btts"}:
+                if canonical_selection in {"o", "over"}:
+                    canonical_selection = "over" if base != "btts" else "yes"
+                elif canonical_selection in {"u", "under"}:
+                    canonical_selection = "under" if base != "btts" else "no"
+    return canonical_market, canonical_selection
+
+
 def parse_odds(payload: dict[str, Any], *, bookmaker: str = ODDSPAPI_BETANO_PE, market_catalog: list[dict[str, Any]] | None = None) -> list[NormalizedOdd]:
     fixture_id = payload.get("fixtureId")
     if fixture_id is None:
@@ -134,6 +158,7 @@ def parse_odds(payload: dict[str, Any], *, bookmaker: str = ODDSPAPI_BETANO_PE, 
         market_name = meta[0] if meta else f"market:{market_id}"
         catalog_line = meta[1] if meta else None
         period = meta[2] if meta else ""
+        market_type = meta[3] if meta else ""
         for outcome_id, outcome in (market.get("outcomes") or {}).items():
             if not isinstance(outcome, dict):
                 continue
@@ -158,7 +183,7 @@ def parse_odds(payload: dict[str, Any], *, bookmaker: str = ODDSPAPI_BETANO_PE, 
                 selection = selection_name
                 if player.get("playerName"):
                     selection = f"{selection_name}:{player['playerName']}"
-                canonical_market, canonical_selection = normalize_market(market_name, selection, period)
+                canonical_market, canonical_selection = _canonical_market(market_name, market_type, period, selection)
                 rows.append(NormalizedOdd(str(fixture_id), bookmaker, canonical_market, canonical_selection, price, _iso(player.get("changedAt")) if player.get("changedAt") else captured, line))
     return rows
 
