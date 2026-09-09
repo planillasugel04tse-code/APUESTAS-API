@@ -31,7 +31,6 @@ def _is_live(kickoff: object, now: datetime | None = None) -> bool:
 
 
 def _market_base(market: object) -> str:
-    """Remove the period suffix from canonical markets (e.g. goals_ft -> goals)."""
     text = str(market or "").lower()
     for suffix in ("_ft", "_1h", "_2h"):
         if text.endswith(suffix):
@@ -39,13 +38,12 @@ def _market_base(market: object) -> str:
     return text
 
 
-def find_arbitrage(limit: int = 100, *, live: bool = False, match_id: int | None = None) -> list[Arbitrage]:
-    """Find surebets from stored prices, optionally restricted to one match.
+def _selection_key(selection: object) -> str:
+    text = str(selection or "").strip().lower()
+    return text.split(":", 1)[-1].strip()
 
-    Pre-match mode only considers fixtures whose kickoff is in the future.
-    Live mode only considers fixtures whose kickoff has started. The live
-    provider refresh is deliberately handled by the on-demand API endpoint.
-    """
+
+def find_arbitrage(limit: int = 100, *, live: bool = False, match_id: int | None = None) -> list[Arbitrage]:
     now = datetime.now(timezone.utc)
     with connect() as db:
         rows = db.execute(
@@ -68,7 +66,7 @@ def find_arbitrage(limit: int = 100, *, live: bool = False, match_id: int | None
     for (current_match_id, market, line), quotes in groups.items():
         best: dict[str, tuple[str, float]] = {}
         for row in quotes:
-            outcome = row["selection"].split(":", 1)[-1].lower()
+            outcome = _selection_key(row["selection"])
             price = float(row["odds"])
             if outcome not in best or price > best[outcome][1]:
                 best[outcome] = (row["bookmaker"], price)
@@ -105,67 +103,3 @@ def find_arbitrage(limit: int = 100, *, live: bool = False, match_id: int | None
             if len(result) >= limit:
                 break
     return result
-
-
-# Register dedicated filters on the existing API router. Live remains manual:
-# opening the dashboard or the pre-match filter never calls the odds provider.
-try:
-    from .api import router as _api_router
-
-    @_api_router.get("/arbitrage/pre-match", tags=["arbitrage"])
-    def pre_match_arbitrage(limit: int = 100):
-        return {
-            "mode": "pre_match",
-            "refresh": "stored_odds_only",
-            "opportunities": [item.__dict__ for item in find_arbitrage(limit, live=False)],
-        }
-
-    @_api_router.post("/arbitrage/live", tags=["arbitrage"])
-    async def live_arbitrage(limit: int = 100, hours: int = 1, limit_matches: int = 20):
-        from .sync_service import sync_oddspapi_betano_pe
-
-        try:
-            sync = await sync_oddspapi_betano_pe(hours=hours, limit_matches=limit_matches, include_live=True, live_only=True)
-        except (RuntimeError, ValueError) as exc:
-            from fastapi import HTTPException
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
-        return {
-            "mode": "live",
-            "refreshed_on_demand": True,
-            "sync": sync.__dict__,
-            "opportunities": [item.__dict__ for item in find_arbitrage(limit, live=True)],
-        }
-
-    @_api_router.post("/arbitrage/verify/{match_id}", tags=["arbitrage"])
-    async def verify_arbitrage(match_id: int, limit: int = 100):
-        """Refresh odds for one event only, then recalculate its surebets."""
-        from .oddspapi_io import ODDSPAPI_BETANO_PE, fetch_market_catalog, fetch_odds
-        from .ingestion_service import save_odds
-
-        with connect() as db:
-            match = db.execute("SELECT id,external_id,kickoff FROM matches WHERE id=?", (match_id,)).fetchone()
-        if match is None:
-            from fastapi import HTTPException
-            raise HTTPException(status_code=404, detail="Partido no encontrado")
-
-        try:
-            catalog = await fetch_market_catalog()
-            odds = await fetch_odds(str(match["external_id"]), bookmaker=ODDSPAPI_BETANO_PE, market_catalog=catalog)
-            _, saved = save_odds(odds)
-        except (RuntimeError, ValueError) as exc:
-            from fastapi import HTTPException
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-        live = _is_live(match["kickoff"])
-        opportunities = find_arbitrage(limit, live=live, match_id=match_id)
-        return {
-            "mode": "live" if live else "pre_match",
-            "match_id": match_id,
-            "refreshed_only_this_match": True,
-            "odds_seen": len(odds),
-            "odds_saved": saved,
-            "surebet_confirmed": bool(opportunities),
-            "opportunities": [item.__dict__ for item in opportunities],
-        }
-except ImportError:
-    pass
