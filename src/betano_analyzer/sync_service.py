@@ -21,6 +21,17 @@ class SyncSummary:
     live_matches_saved: int = 0
 
 
+def _set_match_status(external_ids: set[str], status: str) -> None:
+    if not external_ids:
+        return
+    with connect() as db:
+        placeholders = ",".join("?" for _ in external_ids)
+        db.execute(
+            f"UPDATE matches SET status=? WHERE external_id IN ({placeholders})",
+            (status, *sorted(external_ids)),
+        )
+
+
 async def sync_odds(bookmakers: list[str], include_live: bool = False, limit_per_league: int = 100) -> SyncSummary:
     all_matches = []
     for league in TARGET_LEAGUES:
@@ -35,12 +46,14 @@ async def sync_odds(bookmakers: list[str], include_live: bool = False, limit_per
     if include_live:
         live_matches = await fetch_live_events()
         live_seen, live_saved = save_matches(live_matches)
+        _set_match_status({m.external_id for m in live_matches}, "live")
         if live_matches:
             live_odds = await fetch_odds_multi([m.external_id for m in live_matches], bookmakers=bookmakers)
             live_odds_seen, live_odds_saved = save_odds(live_odds)
             odds_seen += live_odds_seen
             odds_saved += live_odds_saved
 
+    _set_match_status({m.external_id for m in all_matches}, "scheduled")
     return SyncSummary(len(TARGET_LEAGUES), matches_seen, matches_saved, odds_seen, odds_saved, live_seen, live_saved)
 
 
@@ -89,6 +102,8 @@ async def sync_oddspapi_betano_pe(
     selected_live_ids = {match.external_id for match in live_matches} & set(unique)
 
     matches_seen, matches_saved = save_matches(selected_matches)
+    _set_match_status(set(m.external_id for m in selected_matches) - selected_live_ids, "scheduled")
+    _set_match_status(selected_live_ids, "live")
 
     odds = []
     for match in selected_matches:
@@ -110,7 +125,7 @@ async def sync_oddspapi_betano_pe(
 async def verify_oddspapi_betano_pe_match(match_id: int) -> SyncSummary:
     """Refresh Betano PE odds for exactly one stored fixture."""
     with connect() as db:
-        row = db.execute("SELECT external_id FROM matches WHERE id=?", (match_id,)).fetchone()
+        row = db.execute("SELECT external_id,status FROM matches WHERE id=?", (match_id,)).fetchone()
     if not row:
         raise ValueError("Partido no encontrado")
 
