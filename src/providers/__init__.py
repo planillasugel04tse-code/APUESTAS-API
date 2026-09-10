@@ -1,3 +1,0 @@
-"""
-Odds Provider Subsystem
-"""
