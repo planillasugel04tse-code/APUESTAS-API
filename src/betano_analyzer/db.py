@@ -13,6 +13,39 @@ CREATE TABLE IF NOT EXISTS source_configs (id INTEGER PRIMARY KEY AUTOINCREMENT,
 CREATE TABLE IF NOT EXISTS pick_results (id INTEGER PRIMARY KEY AUTOINCREMENT, pick_id INTEGER NOT NULL UNIQUE REFERENCES picks(id), result TEXT NOT NULL, settled_at TEXT NOT NULL, actual_odds REAL, notes TEXT);
 CREATE TABLE IF NOT EXISTS pick_strategy_results (id INTEGER PRIMARY KEY AUTOINCREMENT, pick_id INTEGER NOT NULL REFERENCES picks(id), strategy TEXT NOT NULL, result TEXT NOT NULL, settled_at TEXT NOT NULL, actual_odds REAL, notes TEXT, UNIQUE(pick_id, strategy));
 CREATE TABLE IF NOT EXISTS clv_snapshots (id INTEGER PRIMARY KEY AUTOINCREMENT, match_id INTEGER NOT NULL REFERENCES matches(id), bookmaker TEXT NOT NULL, market TEXT NOT NULL, selection TEXT NOT NULL, line REAL, entry_odds REAL NOT NULL, closing_odds REAL NOT NULL, clv REAL NOT NULL, captured_at TEXT NOT NULL, UNIQUE(match_id, bookmaker, market, selection, line));
+
+CREATE TABLE IF NOT EXISTS telegram_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    raw_text TEXT NOT NULL,
+    status TEXT NOT NULL,
+    pick_id INTEGER,
+    parsed_data TEXT,
+    received_at TEXT NOT NULL,
+    UNIQUE(channel, message_id)
+);
+CREATE TABLE IF NOT EXISTS telegram_signals (
+    signal_id TEXT PRIMARY KEY,
+    channel TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    tipster TEXT,
+    raw_text TEXT NOT NULL,
+    home_team TEXT NOT NULL,
+    away_team TEXT NOT NULL,
+    competition TEXT,
+    market TEXT NOT NULL,
+    selection TEXT NOT NULL,
+    tipster_odds REAL,
+    matched_event_id INTEGER,
+    match_status TEXT NOT NULL,
+    confidence REAL,
+    stake REAL,
+    analysis_result TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(matched_event_id) REFERENCES matches(id),
+    UNIQUE(channel, message_id)
+);
 """
 
 MIGRATIONS = (
