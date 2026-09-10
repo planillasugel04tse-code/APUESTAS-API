@@ -1,12 +1,21 @@
 __pycache__/
 *.py[cod]
-.venv/
+*$py.class
+*.so
+.Python
+env/
 venv/
+ENV/
 .env
+.pytest_cache/
 *.db
 *.sqlite3
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
 .vscode/
 .idea/
+
+# Telegram / secrets
+*.session
+*.session-journal
+.env
+.env.*
+!.env.example

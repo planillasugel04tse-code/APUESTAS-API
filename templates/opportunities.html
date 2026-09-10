@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}Todas las Oportunidades - Betting Opportunity Analyzer{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Todas las Oportunidades Detectadas</h1>
+        <p class="page-subtitle">Filtra por deporte, mercado, ROI mínimo o casa de apuestas.</p>
+    </div>
+</div>
+
+<!-- FILTERS -->
+<form method="GET" action="/opportunities" class="filter-bar">
+    <div class="filter-group">
+        <label class="filter-label">Deporte</label>
+        <select name="sport" class="filter-select">
+            <option value="all">Todos los Deportes</option>
+            <option value="Soccer">Fútbol (Soccer)</option>
+            <option value="Basketball">Baloncesto</option>
+        </select>
+    </div>
+    <div class="filter-group">
+        <label class="filter-label">ROI Mínimo (%)</label>
+        <input type="number" step="0.5" name="min_roi" class="input-field" placeholder="ej. 1.5" style="width: 120px;">
+    </div>
+    <div class="filter-group">
+        <label class="filter-label">Casa de Apuestas</label>
+        <select name="bookmaker" class="filter-select">
+            <option value="all">Todas las Casas</option>
+            <option value="Bet365">Bet365</option>
+            <option value="Pinnacle">Pinnacle</option>
+            <option value="1xBet">1xBet</option>
+            <option value="Betfair">Betfair</option>
+            <option value="Betano">Betano</option>
+        </select>
+    </div>
+    <div style="align-self: flex-end;">
+        <button type="submit" class="btn">Aplicar Filtros</button>
+    </div>
+</form>
+
+<!-- TABLE -->
+<div class="table-container">
+    <table class="custom-table">
+        <thead>
+            <tr>
+                <th>Tipo</th>
+                <th>Evento / Liga</th>
+                <th>Mercado</th>
+                <th>Detalles</th>
+                <th>ROI</th>
+                <th>Probabilidad</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for opp in opportunities %}
+            <tr>
+                <td>
+                    {% if opp.type == 'surebet' %}
+                        <span class="badge badge-surebet">Surebet</span>
+                    {% elif opp.type == 'valuebet' %}
+                        <span class="badge badge-valuebet">Value Bet</span>
+                    {% else %}
+                        <span class="badge badge-range">Range Gap</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div class="team-names">{{ opp.home_team }} vs {{ opp.away_team }}</div>
+                    <div class="league-subtitle">{{ opp.sport }} • {{ opp.league }}</div>
+                </td>
+                <td>{{ opp.market }}</td>
+                <td>
+                    {% if opp.type == 'surebet' %}
+                        {% for leg in opp.details.legs %}
+                            <div>
+                                <small>{{ leg.selection }}: <strong>{{ leg.odds }}</strong> ({{ leg.bookmaker }}) - Stake: {{ leg.stake_percentage }}%</small>
+                            </div>
+                        {% endfor %}
+                    {% elif opp.type == 'valuebet' %}
+                        <small>
+                            Apuesta: <strong>{{ opp.details.selection }}</strong> @ {{ opp.details.bookmaker_odds }} ({{ opp.details.bookmaker }})<br>
+                            Probabilidad Modelo: {{ opp.details.model_probability }}% | Cuota Justa: {{ opp.details.fair_odds }}
+                        </small>
+                    {% else %}
+                        <small>
+                            Bajo: {{ opp.details.under_leg.line }} @ {{ opp.details.under_leg.odds }} ({{ opp.details.under_leg.bookmaker }})<br>
+                            Sobre: {{ opp.details.over_leg.line }} @ {{ opp.details.over_leg.odds }} ({{ opp.details.over_leg.bookmaker }})<br>
+                            Hueco detectado: {{ opp.details.gap_outcomes }} | Riesgo: {{ opp.details.risk_level }}
+                        </small>
+                    {% endif %}
+                </td>
+                <td class="roi-positive">{% if opp.roi > 0 %}+{% endif %}{{ opp.roi }}%</td>
+                <td>{{ opp.probability }}%</td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="6" style="text-align: center; color: var(--text-muted);">No se encontraron resultados con los filtros seleccionados.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

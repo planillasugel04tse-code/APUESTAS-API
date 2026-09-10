@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Betting Opportunity Analyzer{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+    <!-- NAVBAR -->
+    <nav class="navbar">
+        <a href="/" class="brand">
+            <div class="brand-icon">BO</div>
+            <span>Betting Analyzer</span>
+        </a>
+
+        <ul class="nav-links">
+            <li><a href="/" class="nav-link {% if request.path == '/' %}active{% endif %}">Dashboard</a></li>
+            <li><a href="/opportunities" class="nav-link {% if request.path == '/opportunities' %}active{% endif %}">Oportunidades</a></li>
+            <li><a href="/odds" class="nav-link {% if request.path == '/odds' %}active{% endif %}">Cuotas</a></li>
+            <li><a href="/surebets" class="nav-link {% if request.path == '/surebets' %}active{% endif %}">Surebets</a></li>
+            <li><a href="/valuebets" class="nav-link {% if request.path == '/valuebets' %}active{% endif %}">Value Bets</a></li>
+            <li><a href="/range" class="nav-link {% if request.path == '/range' %}active{% endif %}">Range Strategy</a></li>
+            <li><a href="/history" class="nav-link {% if request.path == '/history' %}active{% endif %}">Historial</a></li>
+            <li><a href="/settings" class="nav-link {% if request.path == '/settings' %}active{% endif %}">Ajustes</a></li>
+        </ul>
+
+        <div>
+            <span class="demo-badge">MODO {{ provider_mode }}</span>
+        </div>
+    </nav>
+
+    <!-- MAIN CONTAINER -->
+    <main class="main-container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- MANDATORY LEGAL DISCLAIMER BANNER -->
+    <footer class="disclaimer-banner">
+        <div class="disclaimer-title">EXENCIÓN DE RESPONSABILIDAD MATEMÁTICA Y DE RIESGO</div>
+        <p>{{ disclaimer }}</p>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

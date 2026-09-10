@@ -1,0 +1,218 @@
+[
+  {
+    "event_id": "evt_soc_001",
+    "sport": "Soccer",
+    "league": "Premier League",
+    "home_team": "Arsenal",
+    "away_team": "Chelsea",
+    "market": "1X2",
+    "timestamp": "2026-09-10T19:45:00Z",
+    "bookmakers": [
+      {
+        "name": "Bet365",
+        "country": "UK",
+        "odds": {
+          "home_win": 2.15,
+          "draw": 3.40,
+          "away_win": 3.60
+        }
+      },
+      {
+        "name": "Pinnacle",
+        "country": "Curacao",
+        "odds": {
+          "home_win": 2.25,
+          "draw": 3.60,
+          "away_win": 3.20
+        }
+      },
+      {
+        "name": "1xBet",
+        "country": "Cyprus",
+        "odds": {
+          "home_win": 2.05,
+          "draw": 3.80,
+          "away_win": 3.90
+        }
+      }
+    ]
+  },
+  {
+    "event_id": "evt_soc_002",
+    "sport": "Soccer",
+    "league": "La Liga",
+    "home_team": "Real Madrid",
+    "away_team": "Barcelona",
+    "market": "1X2",
+    "timestamp": "2026-09-11T20:00:00Z",
+    "bookmakers": [
+      {
+        "name": "Betfair",
+        "country": "UK",
+        "odds": {
+          "home_win": 2.30,
+          "draw": 3.50,
+          "away_win": 3.10
+        }
+      },
+      {
+        "name": "William Hill",
+        "country": "UK",
+        "odds": {
+          "home_win": 2.10,
+          "draw": 3.75,
+          "away_win": 3.40
+        }
+      },
+      {
+        "name": "Betano",
+        "country": "Greece",
+        "odds": {
+          "home_win": 2.00,
+          "draw": 3.60,
+          "away_win": 4.10
+        }
+      }
+    ]
+  },
+  {
+    "event_id": "evt_soc_003",
+    "sport": "Soccer",
+    "league": "UEFA Champions League",
+    "home_team": "Bayern Munich",
+    "away_team": "PSG",
+    "market": "Over/Under Goals 2.5",
+    "timestamp": "2026-09-12T20:00:00Z",
+    "bookmakers": [
+      {
+        "name": "Pinnacle",
+        "country": "Curacao",
+        "odds": {
+          "over_2.5": 1.95,
+          "under_2.5": 1.95
+        }
+      },
+      {
+        "name": "Bet365",
+        "country": "UK",
+        "odds": {
+          "over_2.5": 2.15,
+          "under_2.5": 1.80
+        }
+      },
+      {
+        "name": "Unibet",
+        "country": "Malta",
+        "odds": {
+          "over_2.5": 1.85,
+          "under_2.5": 2.10
+        }
+      }
+    ]
+  },
+  {
+    "event_id": "evt_soc_004",
+    "sport": "Soccer",
+    "league": "Serie A",
+    "home_team": "Inter Milan",
+    "away_team": "AC Milan",
+    "market": "Corners Over/Under 9.5",
+    "timestamp": "2026-09-13T19:45:00Z",
+    "bookmakers": [
+      {
+        "name": "Bet365",
+        "country": "UK",
+        "odds": {
+          "under_9.5": 2.10,
+          "over_9.5": 1.75
+        }
+      },
+      {
+        "name": "1xBet",
+        "country": "Cyprus",
+        "odds": {
+          "under_9.5": 1.80,
+          "over_9.5": 2.15
+        }
+      },
+      {
+        "name": "Betano",
+        "country": "Greece",
+        "odds": {
+          "under_7.5": 2.30,
+          "over_10.5": 2.40
+        }
+      }
+    ]
+  },
+  {
+    "event_id": "evt_soc_005",
+    "sport": "Soccer",
+    "league": "Premier League",
+    "home_team": "Manchester City",
+    "away_team": "Liverpool",
+    "market": "Corners Range",
+    "timestamp": "2026-09-14T16:30:00Z",
+    "bookmakers": [
+      {
+        "name": "Bookmaker A",
+        "country": "Global",
+        "odds": {
+          "under_7.5": 2.10,
+          "over_7.5": 1.75
+        }
+      },
+      {
+        "name": "Bookmaker B",
+        "country": "Global",
+        "odds": {
+          "under_7.5": 1.70,
+          "over_7.5": 2.20
+        }
+      },
+      {
+        "name": "Bookmaker C",
+        "country": "Global",
+        "odds": {
+          "under_7.0": 2.25,
+          "over_8.0": 2.35
+        }
+      }
+    ]
+  },
+  {
+    "event_id": "evt_bas_001",
+    "sport": "Basketball",
+    "league": "NBA",
+    "home_team": "Boston Celtics",
+    "away_team": "LA Lakers",
+    "market": "Moneyline",
+    "timestamp": "2026-09-15T01:00:00Z",
+    "bookmakers": [
+      {
+        "name": "DraftKings",
+        "country": "USA",
+        "odds": {
+          "home_win": 1.65,
+          "away_win": 2.35
+        }
+      },
+      {
+        "name": "Fanduel",
+        "country": "USA",
+        "odds": {
+          "home_win": 1.55,
+          "away_win": 2.55
+        }
+      },
+      {
+        "name": "Bwin",
+        "country": "Austria",
+        "odds": {
+          "home_win": 1.72,
+          "away_win": 2.20
+        }
+      }
+    ]
+  }
+]
