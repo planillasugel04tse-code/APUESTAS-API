@@ -5,6 +5,7 @@ import sqlite3
 
 import pytest
 
+from betano_analyzer.matching import choose_team_match, normalize_team_name
 from betano_analyzer.telegram.backtest import evaluate_telegram_backtest
 from betano_analyzer.telegram.parser import parse_telegram_message
 import betano_analyzer.telegram.backtest as telegram_backtest
@@ -22,6 +23,27 @@ def test_telegram_parser_preserves_published_odds():
     assert parsed.odds == 1.62
     assert parsed.market == "1x2"
     assert parsed.selection == "home"
+
+
+def test_team_normalization_handles_common_provider_aliases():
+    assert normalize_team_name("Man Utd FC") == "man united"
+    assert normalize_team_name("Atlético de Madrid") == "atletico de madrid"
+
+
+def test_team_matching_accepts_safe_alias_and_rejects_ambiguous_candidate():
+    candidates = [
+        {"id": 10, "home_team": "Manchester United", "away_team": "Sabah Baku"},
+        {"id": 11, "home_team": "Manchester City", "away_team": "Sabah Baku"},
+    ]
+    selected = choose_team_match("Man Utd", "Sabah Baku", candidates)
+    assert selected is not None
+    assert selected.match_id == 10
+
+    ambiguous = [
+        {"id": 20, "home_team": "United", "away_team": "City"},
+        {"id": 21, "home_team": "United", "away_team": "City"},
+    ]
+    assert choose_team_match("United", "City", ambiguous) is None
 
 
 def test_telegram_backtest_uses_core_evaluate_engine(monkeypatch):
