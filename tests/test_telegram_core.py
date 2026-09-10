@@ -7,11 +7,12 @@ import pytest
 
 from betano_analyzer.matching import choose_team_match, normalize_team_name
 from betano_analyzer.telegram.backtest import evaluate_telegram_backtest
-from betano_analyzer.telegram.parser import parse_telegram_message
 import betano_analyzer.telegram.backtest as telegram_backtest
 
 
 def test_telegram_parser_preserves_published_odds():
+    from betano_analyzer.telegram.parser import parse_telegram_message
+
     parsed = parse_telegram_message(
         "🏆UEFA Champions League ⚽ Manchester United vs Sabah Baku 💰1.62 💵200€",
         channel="@tipster",
@@ -26,7 +27,8 @@ def test_telegram_parser_preserves_published_odds():
 
 
 def test_team_normalization_handles_common_provider_aliases():
-    assert normalize_team_name("Man Utd FC") == "man united"
+    assert normalize_team_name("Man Utd FC") == "manchester united"
+    assert normalize_team_name("Manchester Utd") == "manchester united"
     assert normalize_team_name("Atlético de Madrid") == "atletico de madrid"
 
 
@@ -82,9 +84,44 @@ def test_telegram_backtest_uses_core_evaluate_engine(monkeypatch):
 
 def test_telegram_service_delegates_to_core_engines():
     from betano_analyzer.telegram import service
+
     source = inspect.getsource(service.process_telegram_signal)
     assert "build_value_radar" in source
     assert "build_master_radar" in source
     assert "build_final_selection" in source
     assert "find_arbitrage" in source
     assert "1.0 / parsed.odds" not in source
+
+
+def test_arbitrage_uses_match_status_for_live_classification(monkeypatch):
+    from betano_analyzer import arbitrage
+
+    class Row(dict):
+        def __getitem__(self, key):
+            return dict.__getitem__(self, key)
+
+    rows = [
+        Row(match_id=1, bookmaker="Betano", market="1x2_ft", selection="home", line=None, odds=2.1,
+             captured_at="2026-09-10T21:00:00+00:00", home_team="A", away_team="B",
+             kickoff="2026-09-10T20:00:00+00:00", status="live"),
+        Row(match_id=1, bookmaker="Book2", market="1x2_ft", selection="draw", line=None, odds=4.5,
+             captured_at="2026-09-10T21:00:00+00:00", home_team="A", away_team="B",
+             kickoff="2026-09-10T20:00:00+00:00", status="live"),
+        Row(match_id=1, bookmaker="Book3", market="1x2_ft", selection="away", line=None, odds=4.5,
+             captured_at="2026-09-10T21:00:00+00:00", home_team="A", away_team="B",
+             kickoff="2026-09-10T20:00:00+00:00", status="live"),
+    ]
+
+    class FakeDB:
+        def execute(self, *args):
+            return rows
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(arbitrage, "connect", lambda: FakeDB())
+    live_result = arbitrage.find_arbitrage(live=True, match_id=1)
+    pre_result = arbitrage.find_arbitrage(live=False, match_id=1)
+    assert live_result and live_result[0].mode == "live"
+    assert pre_result == []
