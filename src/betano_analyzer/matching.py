@@ -12,14 +12,25 @@ class MatchCandidate:
     score: float
 
 
+# Conservative aliases for common football abbreviations. These are phrase-level
+# aliases where a generic token such as "man" would be unsafe on its own.
+_TEAM_PHRASE_ALIASES = (
+    (r"\bmanchester\s+utd\b", "manchester united"),
+    (r"\bman\s+utd\b", "manchester united"),
+    (r"\bman\s+united\b", "manchester united"),
+    (r"\bmanchester\s+united\b", "manchester united"),
+)
+
+
 def normalize_team_name(value: str) -> str:
     text = unicodedata.normalize("NFKD", value or "")
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
     text = text.lower()
-    text = re.sub(r"[^a-z0-9]+", " ", text)
+    text = re.sub(r"[^a-z0-9]+", " ", text).strip()
+    for pattern, replacement in _TEAM_PHRASE_ALIASES:
+        text = re.sub(pattern, replacement, text)
     tokens = []
     aliases = {
-        "manchester": "manchester",
         "utd": "united",
         "united": "united",
         "fc": "",
