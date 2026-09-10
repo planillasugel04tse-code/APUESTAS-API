@@ -112,9 +112,16 @@ def test_arbitrage_uses_match_status_for_live_classification(monkeypatch):
              kickoff="2026-09-10T20:00:00+00:00", status="live"),
     ]
 
+    class FakeCursor:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def fetchall(self):
+            return self._rows
+
     class FakeDB:
         def execute(self, *args):
-            return rows
+            return FakeCursor(rows)
         def __enter__(self):
             return self
         def __exit__(self, *args):
