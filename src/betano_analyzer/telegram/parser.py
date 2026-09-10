@@ -43,9 +43,9 @@ def parse_telegram_message(text: str, *, channel: str, tipster: str | None = Non
     if not raw:
         return ParsedTelegramPick("", "", "", "", "", None, 0.0, None, None, source, channel, raw, False, "Mensaje vacío")
 
-    match = re.search(r"(.+?)\s+(?:vs\.?|versus|contra)\s+(.+?)(?=\s+(?:💰|💵|📈|@|cuota|odds|stake|unidades)\b|$)", raw, re.I)
+    match = re.search(r"(.+?)\s+(?:vs\.?|versus|contra)\s+(.+?)(?=\s+(?:💰|💵|📈|@|cuota|odds|stake|unidades)|$)", raw, re.I)
     if not match:
-        match = re.search(r"partido\s*:\s*(.+?)\s*[-–]\s*(.+?)(?=\s+(?:💰|💵|📈|@|cuota|odds)\b|$)", raw, re.I)
+        match = re.search(r"partido\s*:\s*(.+?)\s*[-–]\s*(.+?)(?=\s+(?:💰|💵|📈|@|cuota|odds)|$)", raw, re.I)
     if not match:
         return ParsedTelegramPick("", "", "", "", "", None, 0.0, None, None, source, channel, raw, False, "No se pudieron identificar los equipos")
 
