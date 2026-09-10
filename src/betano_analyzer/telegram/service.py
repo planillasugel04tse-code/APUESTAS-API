@@ -10,6 +10,7 @@ from ..db import connect
 from ..final_selector import build_final_selection
 from ..ingest import normalize_market
 from ..master_radar import build_master_radar
+from ..matching import choose_team_match
 from ..radar_value import build_value_radar
 from .parser import ParsedTelegramPick, parse_telegram_message
 
@@ -26,12 +27,10 @@ def _team_key(value: str) -> str:
 
 def _match_event(db, pick: ParsedTelegramPick):
     rows = db.execute("SELECT * FROM matches WHERE status IN ('scheduled','live','in_play') ORDER BY kickoff").fetchall()
-    home = _team_key(pick.home_team)
-    away = _team_key(pick.away_team)
-    for row in rows:
-        if _team_key(row["home_team"]) == home and _team_key(row["away_team"]) == away:
-            return row
-    return None
+    candidate = choose_team_match(pick.home_team, pick.away_team, [dict(row) for row in rows])
+    if candidate is None:
+        return None
+    return next((row for row in rows if int(row["id"]) == candidate.match_id), None)
 
 
 def _latest_betano_quote(db, match_id: int, market: str, selection: str, line: float | None):
