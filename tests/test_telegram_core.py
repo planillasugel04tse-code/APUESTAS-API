@@ -3,9 +3,9 @@ from __future__ import annotations
 import inspect
 import sqlite3
 
-from src.betano_analyzer.telegram.backtest import evaluate_telegram_backtest
-from src.betano_analyzer.telegram.parser import parse_telegram_message
-import src.betano_analyzer.telegram.backtest as telegram_backtest
+from betano_analyzer.telegram.backtest import evaluate_telegram_backtest
+from betano_analyzer.telegram.parser import parse_telegram_message
+import betano_analyzer.telegram.backtest as telegram_backtest
 
 
 def test_telegram_parser_preserves_published_odds():
@@ -57,7 +57,7 @@ def test_telegram_backtest_uses_core_evaluate_engine(monkeypatch):
 
 
 def test_telegram_service_delegates_to_core_engines():
-    from src.betano_analyzer.telegram import service
+    from betano_analyzer.telegram import service
     source = inspect.getsource(service.process_telegram_signal)
     assert "build_value_radar" in source
     assert "build_master_radar" in source
