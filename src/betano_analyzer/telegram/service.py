@@ -5,7 +5,7 @@ import re
 import uuid
 from datetime import datetime, timezone
 
-from ..arbitrage import find_arbitrage
+from ..arbitrage import _is_live, find_arbitrage
 from ..db import connect
 from ..final_selector import build_final_selection
 from ..ingest import normalize_market
@@ -100,7 +100,7 @@ def process_telegram_signal(raw_text: str, *, channel: str, message_id: str, tip
         event = _match_event(db, parsed)
         if event is None:
             analysis = {"status": "pending_match", "tipster_odds": parsed.odds, "betano_current_odds": None}
-            db.execute("INSERT INTO telegram_messages(channel,message_id,raw_text,status,parsed_data,received_at) VALUES(?,?,?,?,?,?)", (channel, message_id, raw_text, "pending_match", parsed_json, created_at))
+            db.execute("INSERT INTO telegram_messages(channel,message_id,raw_text,status,parsed_data,received_at) VALUES(?,?,?,?,?,?,?)", (channel, message_id, raw_text, "pending_match", parsed_json, created_at))
             db.execute("INSERT INTO telegram_signals(signal_id,channel,message_id,tipster,raw_text,home_team,away_team,competition,market,selection,tipster_odds,matched_event_id,match_status,confidence,stake,analysis_result,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (signal_id, channel, message_id, parsed.tipster, raw_text, parsed.home_team, parsed.away_team, parsed.competition, parsed.market, parsed.selection, parsed.odds, None, "pending_match", parsed.confidence, parsed.stake, json.dumps(analysis), created_at))
             db.commit()
             return {"status": "pending_match", "signal_id": signal_id, "analysis": analysis}
@@ -131,14 +131,7 @@ def process_telegram_signal(raw_text: str, *, channel: str, message_id: str, tip
         final_item = _candidate(final.get("opportunities", []), int(event["id"]), canonical_market, canonical_selection, parsed.line)
         analysis.update({"value_engine": value_item, "master_radar_engine": master_item, "final_selector_engine": final_item})
 
-        kickoff = event["kickoff"]
-        try:
-            dt = datetime.fromisoformat(str(kickoff).replace("Z", "+00:00"))
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            live = dt <= datetime.now(timezone.utc)
-        except ValueError:
-            live = False
+        live = _is_live(event["kickoff"], status=event["status"])
         arbitrages = find_arbitrage(limit=20, live=live, match_id=int(event["id"]))
         analysis["surebets"] = [a.__dict__ for a in arbitrages if a.market.lower() == canonical_market.lower() and a.line == parsed.line]
 
