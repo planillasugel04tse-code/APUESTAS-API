@@ -3,6 +3,8 @@ from __future__ import annotations
 import inspect
 import sqlite3
 
+import pytest
+
 from betano_analyzer.telegram.backtest import evaluate_telegram_backtest
 from betano_analyzer.telegram.parser import parse_telegram_message
 import betano_analyzer.telegram.backtest as telegram_backtest
@@ -53,7 +55,7 @@ def test_telegram_backtest_uses_core_evaluate_engine(monkeypatch):
     assert result["engine"] == "betano_analyzer.backtest.evaluate"
     assert result["bets"] == 1
     assert result["wins"] == 1
-    assert result["roi"] == 0.9
+    assert result["roi"] == pytest.approx(0.9)
 
 
 def test_telegram_service_delegates_to_core_engines():
