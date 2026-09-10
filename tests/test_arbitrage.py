@@ -45,3 +45,16 @@ def test_live_mode_excludes_future_match():
     match_id = _seed_match_with_odds(kickoff, "future")
 
     assert find_arbitrage(live=True, match_id=match_id) == []
+
+
+def test_pre_match_ignores_stale_high_odds_when_newer_price_is_not_arbitrage():
+    kickoff = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+    match_id = _seed_match_with_odds(kickoff, "stale")
+    now = datetime.now(timezone.utc)
+    with connect() as db:
+        db.execute(
+            "INSERT INTO odds(match_id,bookmaker,market,selection,odds,captured_at,line) VALUES(?,?,?,?,?,?,?)",
+            (match_id, "BookA", "1x2_ft", "home", 1.70, (now + timedelta(seconds=1)).isoformat(), None),
+        )
+
+    assert find_arbitrage(live=False, match_id=match_id) == []
