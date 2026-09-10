@@ -19,7 +19,19 @@ class Arbitrage:
     mode: str
 
 
-def _is_live(kickoff: object, now: datetime | None = None) -> bool:
+def _is_live(kickoff: object, now: datetime | None = None, status: object | None = None) -> bool:
+    """Prefer the provider/database match state over kickoff-time inference.
+
+    Kickoff is only a fallback for legacy rows where no usable status exists.
+    """
+    normalized_status = str(status or "").strip().lower()
+    if normalized_status in {"live", "in_play", "inplay", "started"}:
+        return True
+    if normalized_status in {"scheduled", "pre_match", "prematch", "upcoming"}:
+        return False
+    if normalized_status in {"finished", "ended", "cancelled", "canceled", "postponed"}:
+        return False
+
     now = now or datetime.now(timezone.utc)
     try:
         value = datetime.fromisoformat(str(kickoff).replace("Z", "+00:00"))
@@ -58,7 +70,7 @@ def find_arbitrage(limit: int = 100, *, live: bool = False, match_id: int | None
     with connect() as db:
         rows = db.execute(
             """SELECT o.match_id,o.bookmaker,o.market,o.selection,o.line,o.odds,
-                      o.captured_at,m.home_team,m.away_team,m.kickoff
+                      o.captured_at,m.home_team,m.away_team,m.kickoff,m.status
                FROM odds o JOIN matches m ON m.id=o.match_id
                WHERE o.odds > 1
                  AND (? IS NULL OR o.match_id = ?)
@@ -71,7 +83,7 @@ def find_arbitrage(limit: int = 100, *, live: bool = False, match_id: int | None
     # that is no longer available at the book.
     latest: dict[tuple[object, str, str, object, str], object] = {}
     for row in rows:
-        if _is_live(row["kickoff"], now) != live:
+        if _is_live(row["kickoff"], now, row["status"]) != live:
             continue
         outcome = _selection_key(row["selection"])
         key = (row["match_id"], str(row["market"]).lower(), row["line"], str(row["bookmaker"]).lower(), outcome)
@@ -85,7 +97,6 @@ def find_arbitrage(limit: int = 100, *, live: bool = False, match_id: int | None
             latest[key] = row
 
     groups = defaultdict(list)
-    groups.update()
     for row in latest.values():
         groups[(row["match_id"], row["market"], row["line"])].append(row)
 
