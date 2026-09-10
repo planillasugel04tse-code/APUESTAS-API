@@ -27,6 +27,16 @@ def _clean(value: str) -> str:
     return " ".join(value.split()).strip(" -")
 
 
+def _strip_competition_prefix(value: str) -> tuple[str, str]:
+    cleaned = _clean(value)
+    known = ("uefa champions league", "champions league", "europa league", "premier league", "la liga", "serie a", "bundesliga", "ligue 1", "liga 1 peru", "liga 1", "copa libertadores", "copa sudamericana")
+    low = cleaned.lower()
+    for prefix in known:
+        if low.startswith(prefix + " "):
+            return cleaned[len(prefix):].strip(), prefix
+    return cleaned, ""
+
+
 def parse_telegram_message(text: str, *, channel: str, tipster: str | None = None) -> ParsedTelegramPick:
     raw = (text or "").strip()
     source = tipster or channel
@@ -39,7 +49,8 @@ def parse_telegram_message(text: str, *, channel: str, tipster: str | None = Non
     if not match:
         return ParsedTelegramPick("", "", "", "", "", None, 0.0, None, None, source, channel, raw, False, "No se pudieron identificar los equipos")
 
-    home, away = _clean(match.group(1)), _clean(match.group(2))
+    home, detected_comp = _strip_competition_prefix(match.group(1))
+    away = _clean(match.group(2))
     if not home or not away:
         return ParsedTelegramPick("", "", "", "", "", None, 0.0, None, None, source, channel, raw, False, "Equipos vacíos")
 
@@ -51,7 +62,7 @@ def parse_telegram_message(text: str, *, channel: str, tipster: str | None = Non
         return ParsedTelegramPick(home, away, "", "", "", None, odds, None, None, source, channel, raw, False, "Cuota inválida o no encontrada")
 
     comp_match = re.search(r"(?:liga|league|torneo|copa|competici[oó]n)\s*:\s*([^\n]+)", raw, re.I)
-    competition = _clean(comp_match.group(1)) if comp_match else ""
+    competition = _clean(comp_match.group(1)) if comp_match else detected_comp
 
     market = "1x2"
     selection = "home"
@@ -71,7 +82,7 @@ def parse_telegram_message(text: str, *, channel: str, tipster: str | None = Non
     line_match = re.search(r"(?:over|under|más de|mas de|menos de)\s*(\d+(?:\.5|\.0)?)", low)
     if line_match:
         line = float(line_match.group(1))
-        selection = ("under" if any(k in low for k in ("under", "menos de")) else "over")
+        selection = "under" if any(k in low for k in ("under", "menos de")) else "over"
     elif market == "1x2":
         if re.search(r"\b(?:empate|draw)\b", low):
             selection = "draw"
