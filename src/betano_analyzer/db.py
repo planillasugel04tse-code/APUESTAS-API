@@ -43,6 +43,9 @@ CREATE TABLE IF NOT EXISTS telegram_signals (
     stake REAL,
     analysis_result TEXT,
     created_at TEXT NOT NULL,
+    betano_current_odds REAL,
+    betano_odds_captured_at TEXT,
+    line REAL,
     FOREIGN KEY(matched_event_id) REFERENCES matches(id),
     UNIQUE(channel, message_id)
 );
@@ -52,6 +55,9 @@ MIGRATIONS = (
     "ALTER TABLE picks ADD COLUMN probability REAL",
     "ALTER TABLE picks ADD COLUMN probability_source TEXT",
     "ALTER TABLE odds ADD COLUMN line REAL",
+    "ALTER TABLE telegram_signals ADD COLUMN betano_current_odds REAL",
+    "ALTER TABLE telegram_signals ADD COLUMN betano_odds_captured_at TEXT",
+    "ALTER TABLE telegram_signals ADD COLUMN line REAL",
 )
 
 
