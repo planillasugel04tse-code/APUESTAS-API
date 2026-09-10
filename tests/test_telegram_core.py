@@ -14,15 +14,16 @@ def test_telegram_parser_preserves_published_odds():
         channel="@tipster",
     )
     assert parsed.is_valid
-    assert parsed.home_team == "UEFA Champions League Manchester United"
+    assert parsed.home_team == "Manchester United"
     assert parsed.away_team == "Sabah Baku"
+    assert parsed.competition == "uefa champions league"
     assert parsed.odds == 1.62
     assert parsed.market == "1x2"
+    assert parsed.selection == "home"
 
 
-def test_telegram_backtest_uses_core_evaluate_engine(monkeypatch, tmp_path):
-    db_path = tmp_path / "telegram.sqlite3"
-    conn = sqlite3.connect(db_path)
+def test_telegram_backtest_uses_core_evaluate_engine(monkeypatch):
+    conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     conn.executescript("""
         CREATE TABLE telegram_signals (
@@ -46,8 +47,8 @@ def test_telegram_backtest_uses_core_evaluate_engine(monkeypatch, tmp_path):
     conn.execute("INSERT INTO picks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", (1, 7, None, "1x2_ft", "home", 1.9, None, None, None, 0.8, None, None, "2026-09-10T00:00:00Z"))
     conn.execute("INSERT INTO pick_results VALUES (?,?,?,?,?,?)", (1, 1, "won", "2026-09-11T00:00:00Z", 1.9, None))
     conn.commit()
-
     monkeypatch.setattr(telegram_backtest, "connect", lambda: conn)
+
     result = evaluate_telegram_backtest()
     assert result["engine"] == "betano_analyzer.backtest.evaluate"
     assert result["bets"] == 1
