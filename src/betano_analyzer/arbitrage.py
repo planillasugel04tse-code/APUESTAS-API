@@ -43,6 +43,16 @@ def _selection_key(selection: object) -> str:
     return text.split(":", 1)[-1].strip()
 
 
+def _captured_at(value: object) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed
+    except (TypeError, ValueError):
+        return None
+
+
 def find_arbitrage(limit: int = 100, *, live: bool = False, match_id: int | None = None) -> list[Arbitrage]:
     now = datetime.now(timezone.utc)
     with connect() as db:
@@ -56,10 +66,27 @@ def find_arbitrage(limit: int = 100, *, live: bool = False, match_id: int | None
             (match_id, match_id),
         ).fetchall()
 
-    groups = defaultdict(list)
+    # A surebet must use the latest available quote from each bookmaker for
+    # each outcome. Older snapshots can otherwise create a phantom arbitrage
+    # that is no longer available at the book.
+    latest: dict[tuple[object, str, str, object, str], object] = {}
     for row in rows:
         if _is_live(row["kickoff"], now) != live:
             continue
+        outcome = _selection_key(row["selection"])
+        key = (row["match_id"], str(row["market"]).lower(), row["line"], str(row["bookmaker"]).lower(), outcome)
+        current = latest.get(key)
+        if current is None:
+            latest[key] = row
+            continue
+        current_time = _captured_at(current["captured_at"])
+        row_time = _captured_at(row["captured_at"])
+        if row_time is not None and (current_time is None or row_time > current_time):
+            latest[key] = row
+
+    groups = defaultdict(list)
+    groups.update()
+    for row in latest.values():
         groups[(row["match_id"], row["market"], row["line"])].append(row)
 
     result: list[Arbitrage] = []
