@@ -1,7 +1,27 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# Database path resolution
+# ---------------------------------------------------------------------------
+# Priority: DB_PATH env var → caller-supplied path → default filename.
+# The default is relative to the working directory (backward-compatible).
+# Set DB_PATH to an absolute path in production to avoid CWD dependency.
+# ---------------------------------------------------------------------------
+_DEFAULT_DB_NAME = "betano_analyzer.sqlite3"
+
+
+def _resolve_path(path: str | Path | None) -> str | Path:
+    if path is not None:
+        return path
+    env_path = os.getenv("DB_PATH")
+    if env_path:
+        return env_path
+    return _DEFAULT_DB_NAME
+
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS matches (id INTEGER PRIMARY KEY AUTOINCREMENT, external_id TEXT UNIQUE, competition TEXT NOT NULL, home_team TEXT NOT NULL, away_team TEXT NOT NULL, kickoff TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'scheduled');
@@ -61,14 +81,23 @@ MIGRATIONS = (
 )
 
 
-def connect(path: str | Path = "betano_analyzer.sqlite3") -> sqlite3.Connection:
-    connection = sqlite3.connect(path)
+def connect(path: str | Path | None = None) -> sqlite3.Connection:
+    """Return an open SQLite connection.
+
+    Path resolution order:
+    1. ``path`` argument (explicit caller override, used by tests and CLI).
+    2. ``DB_PATH`` environment variable (production deployment).
+    3. Default filename in the current working directory (local dev).
+    """
+    resolved = _resolve_path(path)
+    connection = sqlite3.connect(resolved)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
     return connection
 
 
-def initialize(path: str | Path = "betano_analyzer.sqlite3") -> None:
+def initialize(path: str | Path | None = None) -> None:
+    """Create all tables and apply pending migrations."""
     with connect(path) as connection:
         connection.executescript(SCHEMA)
         for statement in MIGRATIONS:
