@@ -46,6 +46,9 @@ def test_verify_endpoint_refreshes_only_requested_match(monkeypatch, client):
         calls["match_id"] = match_id
         return SyncSummary(8, 1, 0, 3, 3, 0, 0)
 
+    # match_id=42 is a synthetic test fixture: we must ensure find_arbitrage
+    # returns nothing for it regardless of what is stored in the local DB.
+    monkeypatch.setattr("betano_analyzer.arbitrage_api.find_arbitrage", lambda *a, **kw: [])
     monkeypatch.setattr("betano_analyzer.sync_service.verify_oddspapi_betano_pe_match", fake_verify)
     response = client.post("/api/v1/arbitrage/verify/42", params={"limit": 5})
 
