@@ -32,6 +32,23 @@ def _set_match_status(external_ids: set[str], status: str) -> None:
         )
 
 
+def _rematch_pending_telegram() -> None:
+    """Best-effort rematching after fixture/odds synchronization.
+
+    The local import avoids coupling the generic sync module to the Telegram
+    collector at import time. A Telegram failure must never make a successful
+    odds synchronization fail.
+    """
+    try:
+        from .telegram.service import retry_pending_matches
+
+        retry_pending_matches()
+    except Exception:
+        # Sync is the source-of-truth operation; Telegram rematching is a
+        # follow-up convenience and can be retried independently via the API.
+        return
+
+
 async def sync_odds(bookmakers: list[str], include_live: bool = False, limit_per_league: int = 100) -> SyncSummary:
     all_matches = []
     for league in TARGET_LEAGUES:
@@ -54,7 +71,9 @@ async def sync_odds(bookmakers: list[str], include_live: bool = False, limit_per
             odds_saved += live_odds_saved
 
     _set_match_status({m.external_id for m in all_matches}, "scheduled")
-    return SyncSummary(len(TARGET_LEAGUES), matches_seen, matches_saved, odds_seen, odds_saved, live_seen, live_saved)
+    summary = SyncSummary(len(TARGET_LEAGUES), matches_seen, matches_saved, odds_seen, odds_saved, live_seen, live_saved)
+    _rematch_pending_telegram()
+    return summary
 
 
 async def sync_oddspapi_betano_pe(
@@ -111,7 +130,7 @@ async def sync_oddspapi_betano_pe(
     odds_seen, odds_saved = save_odds(odds)
 
     live_seen = sum(match.external_id in selected_live_ids for match in selected_matches)
-    return SyncSummary(
+    summary = SyncSummary(
         leagues=8,
         matches_seen=matches_seen,
         matches_saved=matches_saved,
@@ -120,6 +139,8 @@ async def sync_oddspapi_betano_pe(
         live_matches_seen=live_seen,
         live_matches_saved=live_seen,
     )
+    _rematch_pending_telegram()
+    return summary
 
 
 async def verify_oddspapi_betano_pe_match(match_id: int) -> SyncSummary:
@@ -132,4 +153,6 @@ async def verify_oddspapi_betano_pe_match(match_id: int) -> SyncSummary:
     market_catalog = await fetch_market_catalog()
     odds = await fetch_odds(row["external_id"], bookmaker=ODDSPAPI_BETANO_PE, market_catalog=market_catalog)
     odds_seen, odds_saved = save_odds(odds)
-    return SyncSummary(8, 1, 0, odds_seen, odds_saved)
+    summary = SyncSummary(8, 1, 0, odds_seen, odds_saved)
+    _rematch_pending_telegram()
+    return summary
