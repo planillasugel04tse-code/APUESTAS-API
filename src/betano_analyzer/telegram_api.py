@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from .telegram.backtest import evaluate_telegram_backtest
+from .telegram.config import load_telegram_config
 from .telegram.service import process_telegram_signal, retry_pending_matches
 
 router = APIRouter(prefix="/api/v1/telegram", tags=["telegram"])
@@ -37,13 +38,26 @@ def list_telegram_signals(limit: int = 50):
         return {"count": len(rows), "signals": [dict(row) for row in rows]}
 
 
+@router.get("/config")
+def telegram_config_status():
+    """Return safe Telegram configuration status without exposing secrets."""
+    config = load_telegram_config()
+    return {
+        "enabled": config.enabled,
+        "configured": config.is_configured,
+        "valid": not config.validation_errors,
+        "session_name": config.session_name,
+        "channels": config.channels if config.channels is not None else "all",
+        "has_api_id": config.api_id is not None,
+        "has_api_hash": bool(config.api_hash),
+        "has_phone": bool(config.phone),
+        "validation_errors": config.validation_errors,
+    }
+
+
 @router.post("/retry-pending")
 def retry_pending():
-    """Re-attempt event matching for all signals still in 'pending_match' status.
-
-    Call this after a sync to resolve signals that arrived before the fixture
-    existed in the local database.
-    """
+    """Re-attempt event matching for all signals still in 'pending_match'."""
     try:
         return retry_pending_matches()
     except Exception as exc:
