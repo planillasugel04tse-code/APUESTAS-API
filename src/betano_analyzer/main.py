@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from .api import router
 from .arbitrage_api import router as arbitrage_router
 from .bookmakers_api import router as bookmakers_router
+from .bookmakers_panel import bookmakers_panel_page
 from .control_panel import control_panel_page
 from .db import initialize
 from .health_api import router as health_router
@@ -50,6 +51,11 @@ def dashboard():
 @app.get("/panel", include_in_schema=False)
 def control_panel():
     return control_panel_page()
+
+
+@app.get("/bookmakers", include_in_schema=False)
+def bookmakers_panel():
+    return bookmakers_panel_page()
 
 
 @app.get("/telegram-test", include_in_schema=False)
