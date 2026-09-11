@@ -118,7 +118,7 @@ def build_backtest_report(period: Period = Period.TODOS, db_path: str | Path | N
         bet_clauses.append("date(COALESCE(b.settled_at,b.placed_at)) <= date(?)")
         bet_params.append(end.isoformat())
 
-    with connect(db_path or "betano_analyzer.sqlite3") as db:
+    with connect(db_path) as db:
         rows = db.execute(f"""
             SELECT m.competition, p.pick_id,
                    pk.original_market, pk.original_odds,
