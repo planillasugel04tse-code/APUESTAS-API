@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from datetime import date
 
 from fastapi import FastAPI
@@ -10,19 +11,24 @@ from .oddspapi_api import router as oddspapi_router
 from .telegram_api import router as telegram_router
 from .web import dashboard_response
 
-initialize()
 
-app = FastAPI(title="Betano Live Analyzer", version="0.1.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize the database on startup."""
+    initialize()
+    yield
+
+
+app = FastAPI(
+    title="Betano Live Analyzer",
+    version="0.1.0",
+    lifespan=lifespan,
+)
 app.include_router(router)
 app.include_router(arbitrage_router)
 app.include_router(model_router)
 app.include_router(oddspapi_router)
 app.include_router(telegram_router)
-
-
-@app.on_event("startup")
-def startup() -> None:
-    initialize()
 
 
 @app.get("/health")

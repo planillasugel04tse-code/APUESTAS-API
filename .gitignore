@@ -10,3 +10,19 @@ venv/
 .ruff_cache/
 .vscode/
 .idea/
+
+# Telegram session files — NEVER commit these
+*.session
+*.session-journal
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
