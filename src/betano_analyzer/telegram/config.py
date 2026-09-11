@@ -3,6 +3,11 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from dotenv import load_dotenv
+
+# Load local .env when present. GitHub never receives the user's real .env.
+load_dotenv()
+
 
 def _channels(value: str | None) -> list[str] | None:
     if not value or value.strip().lower() in {"*", "all", "todos"}:
@@ -22,6 +27,17 @@ class TelegramConfig:
     @property
     def is_configured(self) -> bool:
         return bool(self.enabled and self.api_id and self.api_hash)
+
+    @property
+    def validation_errors(self) -> list[str]:
+        errors: list[str] = []
+        if not self.enabled:
+            return errors
+        if not self.api_id:
+            errors.append("TELEGRAM_API_ID no está configurado")
+        if not self.api_hash:
+            errors.append("TELEGRAM_API_HASH no está configurado")
+        return errors
 
 
 def load_telegram_config() -> TelegramConfig:
