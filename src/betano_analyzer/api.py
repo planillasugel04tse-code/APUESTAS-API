@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from .arbitrage import find_arbitrage
 from .backtest_report import build_backtest_report
+from .bookmakers import peru_bookmakers
 from .clv import calculate_clv
 from .dashboard import Period, period_range
 from .db import connect
@@ -199,11 +200,25 @@ def providers():
 
 @router.post("/sync/odds")
 async def sync_odds_endpoint(bookmakers: str = Query(default="Betano"), include_live: bool = False, limit_per_league: int = Query(default=100, ge=1, le=200)):
-    books = [item.strip() for item in bookmakers.split(",") if item.strip()]
+    requested = bookmakers.strip()
+    if requested.lower() == "peru":
+        try:
+            books = await peru_bookmakers()
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        if not books:
+            raise HTTPException(status_code=503, detail="No hay casas peruanas disponibles para la cuenta del proveedor configurado")
+    else:
+        books = [item.strip() for item in requested.split(",") if item.strip()]
     if not books:
         raise HTTPException(status_code=400, detail="Debes indicar al menos una casa de apuestas")
-    summary = await sync_odds(books, include_live=include_live, limit_per_league=limit_per_league)
-    return summary.__dict__
+    if len(books) > 30:
+        raise HTTPException(status_code=400, detail="El sincronizador admite como máximo 30 casas por lote")
+    try:
+        summary = await sync_odds(books, include_live=include_live, limit_per_league=limit_per_league)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {**summary.__dict__, "bookmakers_requested": books}
 
 
 @router.get("/movements")
@@ -240,12 +255,6 @@ def clv_summary(period: Period = Query(default=Period.TODOS), bookmaker: str | N
     if market: clauses.append("LOWER(c.market)=LOWER(?)"); params.append(market)
     where = " WHERE " + " AND ".join(clauses) if clauses else ""
     with connect() as db:
-        rows = db.execute(f"SELECT c.clv, c.entry_odds, c.closing_odds, c.bookmaker, c.market FROM clv_snapshots c{where}", params).fetchall()
-    values = [float(r["clv"]) for r in rows]
-    positive = sum(v > 0 for v in values)
-    return {"period": period.value, "bookmaker": bookmaker, "market": market, "snapshots": len(values), "positive": positive, "negative": sum(v < 0 for v in values), "flat": sum(v == 0 for v in values), "positive_rate": positive / len(values) if values else 0.0, "average_clv": sum(values) / len(values) if values else 0.0, "median_clv": sorted(values)[len(values)//2] if values else 0.0}
-
-
-@router.get("/dashboard/periods")
-def dashboard_periods():
-    return {"periods": [{"id":"hoy","label":"HOY"},{"id":"lunes-viernes","label":"LUNES A VIERNES"},{"id":"sabado-domingo","label":"SABADO DOMINGO"},{"id":"mes","label":"MES"},{"id":"3-meses","label":"3 MESES"},{"id":"6-meses","label":"6 MESES"},{"id":"todos","label":"TODOS"}]}
+        rows = db.execute(f"SELECT c.bookmaker,c.market,c.clv FROM clv_snapshots c{where}", params).fetchall()
+    clvs = [r["clv"] for r in rows]
+    return {"period": period.value, "bookmaker": bookmaker, "market": market, "samples": len(clvs), "avg_clv": sum(clvs) / len(clvs) if clvs else 0.0, "positive": sum(v > 0 for v in clvs), "negative": sum(v < 0 for v in clvs)}
