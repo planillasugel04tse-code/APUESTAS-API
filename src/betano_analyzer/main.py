@@ -9,6 +9,7 @@ from .db import initialize
 from .model_api import router as model_router
 from .oddspapi_api import router as oddspapi_router
 from .telegram_api import router as telegram_router
+from .telegram_test_web import telegram_test_page
 from .web import dashboard_response
 
 
@@ -39,3 +40,8 @@ def health() -> dict[str, str]:
 @app.get("/", include_in_schema=False)
 def dashboard():
     return dashboard_response(date.today())
+
+
+@app.get("/telegram-test", include_in_schema=False)
+def telegram_test():
+    return telegram_test_page()
