@@ -255,6 +255,12 @@ def clv_summary(period: Period = Query(default=Period.TODOS), bookmaker: str | N
     if market: clauses.append("LOWER(c.market)=LOWER(?)"); params.append(market)
     where = " WHERE " + " AND ".join(clauses) if clauses else ""
     with connect() as db:
-        rows = db.execute(f"SELECT c.bookmaker,c.market,c.clv FROM clv_snapshots c{where}", params).fetchall()
-    clvs = [r["clv"] for r in rows]
-    return {"period": period.value, "bookmaker": bookmaker, "market": market, "samples": len(clvs), "avg_clv": sum(clvs) / len(clvs) if clvs else 0.0, "positive": sum(v > 0 for v in clvs), "negative": sum(v < 0 for v in clvs)}
+        rows = db.execute(f"SELECT c.clv, c.entry_odds, c.closing_odds, c.bookmaker, c.market FROM clv_snapshots c{where}", params).fetchall()
+    values = [float(r["clv"]) for r in rows]
+    positive = sum(v > 0 for v in values)
+    return {"period": period.value, "bookmaker": bookmaker, "market": market, "snapshots": len(values), "positive": positive, "negative": sum(v < 0 for v in values), "flat": sum(v == 0 for v in values), "positive_rate": positive / len(values) if values else 0.0, "average_clv": sum(values) / len(values) if values else 0.0, "median_clv": sorted(values)[len(values)//2] if values else 0.0}
+
+
+@router.get("/dashboard/periods")
+def dashboard_periods():
+    return {"periods": [{"id":"hoy","label":"HOY"},{"id":"lunes-viernes","label":"LUNES A VIERNES"},{"id":"sabado-domingo","label":"SABADO DOMINGO"},{"id":"mes","label":"MES"},{"id":"3-meses","label":"3 MESES"},{"id":"6-meses","label":"6 MESES"},{"id":"todos","label":"TODOS"}]}
