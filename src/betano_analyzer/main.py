@@ -5,6 +5,7 @@ from fastapi import FastAPI
 
 from .api import router
 from .arbitrage_api import router as arbitrage_router
+from .control_panel import control_panel_page
 from .db import initialize
 from .model_api import router as model_router
 from .oddspapi_api import router as oddspapi_router
@@ -40,6 +41,11 @@ def health() -> dict[str, str]:
 @app.get("/", include_in_schema=False)
 def dashboard():
     return dashboard_response(date.today())
+
+
+@app.get("/panel", include_in_schema=False)
+def control_panel():
+    return control_panel_page()
 
 
 @app.get("/telegram-test", include_in_schema=False)
