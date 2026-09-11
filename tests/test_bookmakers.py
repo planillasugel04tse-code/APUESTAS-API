@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from fastapi.testclient import TestClient
 
 from betano_analyzer.main import app
@@ -22,7 +24,7 @@ def test_sync_accepts_peru_alias(monkeypatch):
         assert books == ["Betano PE", "Inkabet"]
         assert include_live is False
         assert limit_per_league == 20
-        return type("Summary", (), {"__dict__": {"matches_seen": 2, "matches_saved": 2, "odds_seen": 4, "odds_saved": 4}})()
+        return SimpleNamespace(matches_seen=2, matches_saved=2, odds_seen=4, odds_saved=4)
 
     monkeypatch.setattr(api, "peru_bookmakers", fake_peru_bookmakers)
     monkeypatch.setattr(api, "sync_odds", fake_sync)
