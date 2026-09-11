@@ -7,6 +7,7 @@ from .api import router
 from .arbitrage_api import router as arbitrage_router
 from .control_panel import control_panel_page
 from .db import initialize
+from .health_api import router as health_router
 from .model_api import router as model_router
 from .oddspapi_api import router as oddspapi_router
 from .telegram_api import router as telegram_router
@@ -28,6 +29,7 @@ app = FastAPI(
 )
 app.include_router(router)
 app.include_router(arbitrage_router)
+app.include_router(health_router)
 app.include_router(model_router)
 app.include_router(oddspapi_router)
 app.include_router(telegram_router)
