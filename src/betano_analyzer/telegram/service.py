@@ -26,7 +26,9 @@ def _team_key(value: str) -> str:
 
 
 def _match_event(db, pick: ParsedTelegramPick):
-    rows = db.execute("SELECT * FROM matches WHERE status IN ('scheduled','live','in_play') ORDER BY kickoff").fetchall()
+    rows = db.execute(
+        "SELECT * FROM matches WHERE status IN ('scheduled','live','in_play') ORDER BY kickoff"
+    ).fetchall()
     candidate = choose_team_match(pick.home_team, pick.away_team, [dict(row) for row in rows])
     if candidate is None:
         return None
@@ -34,6 +36,11 @@ def _match_event(db, pick: ParsedTelegramPick):
 
 
 def _latest_betano_quote(db, match_id: int, market: str, selection: str, line: float | None):
+    """Return the most recent Betano snapshot for this outcome.
+
+    The result is intentionally separate from the tipster-published odds
+    so callers can compare them without conflating the two price sources.
+    """
     rows = db.execute(
         """SELECT * FROM odds
            WHERE match_id=? AND LOWER(bookmaker) LIKE 'betano%'
@@ -47,17 +54,26 @@ def _latest_betano_quote(db, match_id: int, market: str, selection: str, line: f
 
 def _candidate(items: list[dict], match_id: int, market: str, selection: str, line: float | None):
     for item in items:
-        if item.get("match_id") == match_id and str(item.get("market", "")).lower() == market.lower() and str(item.get("selection", "")).lower() == selection.lower() and item.get("line") == line:
+        if (
+            item.get("match_id") == match_id
+            and str(item.get("market", "")).lower() == market.lower()
+            and str(item.get("selection", "")).lower() == selection.lower()
+            and item.get("line") == line
+        ):
             return item
     return None
 
 
-def _ensure_tipster_and_pick(db, parsed: ParsedTelegramPick, match_id: int, market: str, selection: str) -> int:
+def _ensure_tipster_and_pick(
+    db, parsed: ParsedTelegramPick, match_id: int, market: str, selection: str
+) -> int:
     tipster = db.execute("SELECT id FROM tipsters WHERE name=?", (parsed.tipster,)).fetchone()
     if tipster:
         tipster_id = int(tipster["id"])
     else:
-        cur = db.execute("INSERT INTO tipsters(name,source,active) VALUES(?,?,1)", (parsed.tipster, "Telegram"))
+        cur = db.execute(
+            "INSERT INTO tipsters(name,source,active) VALUES(?,?,1)", (parsed.tipster, "Telegram")
+        )
         tipster_id = int(cur.lastrowid)
     existing = db.execute(
         """SELECT id FROM picks WHERE match_id=? AND tipster_id=?
@@ -73,80 +89,271 @@ def _ensure_tipster_and_pick(db, parsed: ParsedTelegramPick, match_id: int, mark
                               conservative_market,conservative_selection,conservative_odds,
                               confidence,probability,probability_source,created_at)
            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (match_id, tipster_id, market, selection, parsed.odds, None, None, None,
-         parsed.confidence, None, "telegram_source", _now()),
+        (
+            match_id, tipster_id, market, selection, parsed.odds,
+            None, None, None,
+            parsed.confidence, None, "telegram_source", _now(),
+        ),
     )
     return int(cur.lastrowid)
 
 
-def process_telegram_signal(raw_text: str, *, channel: str, message_id: str, tipster: str | None = None) -> dict:
-    """Telegram input adapter. Decisions are delegated to existing core engines."""
+def process_telegram_signal(
+    raw_text: str,
+    *,
+    channel: str,
+    message_id: str,
+    tipster: str | None = None,
+) -> dict:
+    """Telegram input adapter. All bet-analysis decisions are delegated to core engines.
+
+    Price separation guarantee
+    --------------------------
+    - ``tipster_odds``: the odds published in the Telegram message (source price).
+    - ``betano_current_odds``: the latest Betano snapshot stored in the DB at processing time.
+    - These two values are stored and returned separately; they are never merged.
+    """
     parsed = parse_telegram_message(raw_text, channel=channel, tipster=tipster)
     created_at = _now()
     signal_id = f"tg-{uuid.uuid4().hex[:12]}"
 
     with connect() as db:
-        existing = db.execute("SELECT signal_id FROM telegram_signals WHERE channel=? AND message_id=?", (channel, message_id)).fetchone()
+        existing = db.execute(
+            "SELECT signal_id FROM telegram_signals WHERE channel=? AND message_id=?",
+            (channel, message_id),
+        ).fetchone()
         if existing:
-            return {"status": "already_processed", "signal_id": existing["signal_id"], "channel": channel, "message_id": message_id}
+            return {
+                "status": "already_processed",
+                "signal_id": existing["signal_id"],
+                "channel": channel,
+                "message_id": message_id,
+            }
 
-        parsed_json = json.dumps(parsed.__dict__, ensure_ascii=False)
+        parsed_json = json.dumps(
+            {k: v for k, v in parsed.__dict__.items()}, ensure_ascii=False
+        )
         if not parsed.is_valid:
-            db.execute("INSERT INTO telegram_messages(channel,message_id,raw_text,status,parsed_data,received_at) VALUES(?,?,?,?,?,?)", (channel, message_id, raw_text, "failed", parsed_json, created_at))
-            db.execute("INSERT INTO telegram_signals(signal_id,channel,message_id,tipster,raw_text,home_team,away_team,competition,market,selection,tipster_odds,matched_event_id,match_status,confidence,stake,analysis_result,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (signal_id, channel, message_id, parsed.tipster, raw_text, parsed.home_team, parsed.away_team, parsed.competition, parsed.market, parsed.selection, parsed.odds, None, "invalid", parsed.confidence, parsed.stake, json.dumps({"error": parsed.error_reason}, ensure_ascii=False), created_at))
+            db.execute(
+                "INSERT INTO telegram_messages(channel,message_id,raw_text,status,parsed_data,received_at) VALUES(?,?,?,?,?,?)",
+                (channel, message_id, raw_text, "failed", parsed_json, created_at),
+            )
+            db.execute(
+                """INSERT INTO telegram_signals(signal_id,channel,message_id,tipster,raw_text,
+                   home_team,away_team,competition,market,selection,tipster_odds,
+                   matched_event_id,match_status,confidence,stake,analysis_result,created_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    signal_id, channel, message_id, parsed.tipster, raw_text,
+                    parsed.home_team, parsed.away_team, parsed.competition,
+                    parsed.market, parsed.selection, parsed.odds,
+                    None, "invalid", parsed.confidence, parsed.stake,
+                    json.dumps({"error": parsed.error_reason}, ensure_ascii=False),
+                    created_at,
+                ),
+            )
             db.commit()
             return {"status": "failed", "signal_id": signal_id, "error": parsed.error_reason}
 
         event = _match_event(db, parsed)
         if event is None:
-            analysis = {"status": "pending_match", "tipster_odds": parsed.odds, "betano_current_odds": None}
-            db.execute("INSERT INTO telegram_messages(channel,message_id,raw_text,status,parsed_data,received_at) VALUES(?,?,?,?,?,?)", (channel, message_id, raw_text, "pending_match", parsed_json, created_at))
-            db.execute("INSERT INTO telegram_signals(signal_id,channel,message_id,tipster,raw_text,home_team,away_team,competition,market,selection,tipster_odds,matched_event_id,match_status,confidence,stake,analysis_result,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (signal_id, channel, message_id, parsed.tipster, raw_text, parsed.home_team, parsed.away_team, parsed.competition, parsed.market, parsed.selection, parsed.odds, None, "pending_match", parsed.confidence, parsed.stake, json.dumps(analysis), created_at))
+            analysis = {
+                "status": "pending_match",
+                "tipster_odds": parsed.odds,
+                "betano_current_odds": None,
+                "note": "El partido no fue encontrado en la base de datos. La señal queda pendiente de rematching.",
+            }
+            db.execute(
+                "INSERT INTO telegram_messages(channel,message_id,raw_text,status,parsed_data,received_at) VALUES(?,?,?,?,?,?)",
+                (channel, message_id, raw_text, "pending_match", parsed_json, created_at),
+            )
+            db.execute(
+                """INSERT INTO telegram_signals(signal_id,channel,message_id,tipster,raw_text,
+                   home_team,away_team,competition,market,selection,tipster_odds,
+                   matched_event_id,match_status,confidence,stake,analysis_result,created_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    signal_id, channel, message_id, parsed.tipster, raw_text,
+                    parsed.home_team, parsed.away_team, parsed.competition,
+                    parsed.market, parsed.selection, parsed.odds,
+                    None, "pending_match", parsed.confidence, parsed.stake,
+                    json.dumps(analysis), created_at,
+                ),
+            )
             db.commit()
             return {"status": "pending_match", "signal_id": signal_id, "analysis": analysis}
 
         canonical_market, canonical_selection = normalize_market(parsed.market, parsed.selection)
-        pick_id = _ensure_tipster_and_pick(db, parsed, int(event["id"]), canonical_market, canonical_selection)
-        quote = _latest_betano_quote(db, int(event["id"]), canonical_market, canonical_selection, parsed.line)
-        betano_current_odds = float(quote["odds"]) if quote else None
-        betano_odds_captured_at = str(quote["captured_at"]) if quote else None
-        analysis = {
+        pick_id = _ensure_tipster_and_pick(
+            db, parsed, int(event["id"]), canonical_market, canonical_selection
+        )
+
+        # -----------------------------------------------------------------------
+        # Betano snapshot — SEPARATE from tipster odds
+        # -----------------------------------------------------------------------
+        quote = _latest_betano_quote(
+            db, int(event["id"]), canonical_market, canonical_selection, parsed.line
+        )
+        betano_current_odds: float | None = float(quote["odds"]) if quote else None
+        betano_odds_captured_at: str | None = str(quote["captured_at"]) if quote else None
+
+        analysis: dict = {
             "status": "matched",
             "tipster_odds": parsed.odds,
+            # tipster_odds is the price published in the Telegram channel.
+            # betano_current_odds is the last Betano snapshot in the DB — these are DIFFERENT sources.
             "betano_current_odds": betano_current_odds,
             "betano_odds_captured_at": betano_odds_captured_at,
             "market": canonical_market,
             "selection": canonical_selection,
             "line": parsed.line,
             "pick_id": pick_id,
-            "source_price_delta": round((betano_current_odds - parsed.odds), 4) if betano_current_odds is not None else None,
-            "source_price_note": "tipster_odds is the published Telegram price; betano_current_odds is the latest Betano snapshot",
+            "source_price_delta": (
+                round(betano_current_odds - parsed.odds, 4)
+                if betano_current_odds is not None
+                else None
+            ),
+            "source_price_note": (
+                "tipster_odds = precio publicado en Telegram; "
+                "betano_current_odds = último snapshot Betano en DB (fuentes distintas)"
+            ),
         }
 
+        # -----------------------------------------------------------------------
+        # Delegate to core analysis engines
+        # -----------------------------------------------------------------------
         value = build_value_radar(limit=100, offered_bookmaker="Betano")
-        value_item = _candidate(value.get("opportunities", []), int(event["id"]), canonical_market, canonical_selection, parsed.line)
+        value_item = _candidate(
+            value.get("opportunities", []),
+            int(event["id"]), canonical_market, canonical_selection, parsed.line,
+        )
         master = build_master_radar(limit=100)
-        master_item = _candidate(master.get("opportunities", []), int(event["id"]), canonical_market, canonical_selection, parsed.line)
+        master_item = _candidate(
+            master.get("opportunities", []),
+            int(event["id"]), canonical_market, canonical_selection, parsed.line,
+        )
         final = build_final_selection(limit=100)
-        final_item = _candidate(final.get("opportunities", []), int(event["id"]), canonical_market, canonical_selection, parsed.line)
-        analysis.update({"value_engine": value_item, "master_radar_engine": master_item, "final_selector_engine": final_item})
+        final_item = _candidate(
+            final.get("opportunities", []),
+            int(event["id"]), canonical_market, canonical_selection, parsed.line,
+        )
+        analysis.update({
+            "value_engine": value_item,
+            "master_radar_engine": master_item,
+            "final_selector_engine": final_item,
+        })
 
         live = _is_live(event["kickoff"], status=event["status"])
         arbitrages = find_arbitrage(limit=20, live=live, match_id=int(event["id"]))
-        analysis["surebets"] = [a.__dict__ for a in arbitrages if a.market.lower() == canonical_market.lower() and a.line == parsed.line]
+        analysis["surebets"] = [
+            a.__dict__
+            for a in arbitrages
+            if a.market.lower() == canonical_market.lower() and a.line == parsed.line
+        ]
 
-        db.execute("INSERT INTO telegram_messages(channel,message_id,raw_text,status,pick_id,parsed_data,received_at) VALUES(?,?,?,?,?,?,?)", (channel, message_id, raw_text, "processed", pick_id, parsed_json, created_at))
-        db.execute("""INSERT INTO telegram_signals(
-            signal_id,channel,message_id,tipster,raw_text,home_team,away_team,competition,
-            market,selection,tipster_odds,matched_event_id,match_status,confidence,stake,
-            analysis_result,created_at,betano_current_odds,betano_odds_captured_at,line
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (
-            signal_id, channel, message_id, parsed.tipster, raw_text, parsed.home_team,
-            parsed.away_team, parsed.competition, canonical_market, canonical_selection,
-            parsed.odds, event["id"], "matched", parsed.confidence, parsed.stake,
-            json.dumps(analysis, ensure_ascii=False), created_at, betano_current_odds,
-            betano_odds_captured_at, parsed.line,
-        ))
+        db.execute(
+            "INSERT INTO telegram_messages(channel,message_id,raw_text,status,pick_id,parsed_data,received_at) VALUES(?,?,?,?,?,?,?)",
+            (channel, message_id, raw_text, "processed", pick_id, parsed_json, created_at),
+        )
+        db.execute(
+            """INSERT INTO telegram_signals(
+                signal_id,channel,message_id,tipster,raw_text,home_team,away_team,competition,
+                market,selection,tipster_odds,matched_event_id,match_status,confidence,stake,
+                analysis_result,created_at,betano_current_odds,betano_odds_captured_at,line
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                signal_id, channel, message_id, parsed.tipster, raw_text,
+                parsed.home_team, parsed.away_team, parsed.competition,
+                canonical_market, canonical_selection,
+                parsed.odds, event["id"], "matched", parsed.confidence, parsed.stake,
+                json.dumps(analysis, ensure_ascii=False), created_at,
+                betano_current_odds, betano_odds_captured_at, parsed.line,
+            ),
+        )
         db.commit()
 
-    return {"status": "success", "signal_id": signal_id, "match_id": event["id"], "pick_id": pick_id, "analysis": analysis}
+    return {
+        "status": "success",
+        "signal_id": signal_id,
+        "match_id": event["id"],
+        "pick_id": pick_id,
+        "analysis": analysis,
+    }
+
+
+def retry_pending_matches() -> dict:
+    """Re-attempt event matching for all signals that arrived before the fixture existed in the DB.
+
+    Call this after a sync to resolve signals that were stored as 'pending_match'.
+    Returns a summary of how many were resolved and how many remain pending.
+    """
+    resolved = 0
+    still_pending = 0
+
+    with connect() as db:
+        pending = db.execute(
+            """SELECT signal_id, channel, message_id, raw_text, tipster
+               FROM telegram_signals WHERE match_status='pending_match'
+               ORDER BY created_at"""
+        ).fetchall()
+
+        for row in pending:
+            parsed = parse_telegram_message(
+                row["raw_text"],
+                channel=row["channel"],
+                tipster=row["tipster"],
+            )
+            if not parsed.is_valid:
+                still_pending += 1
+                continue
+
+            event = _match_event(db, parsed)
+            if event is None:
+                still_pending += 1
+                continue
+
+            # Found a match — update the existing signal in-place
+            canonical_market, canonical_selection = normalize_market(parsed.market, parsed.selection)
+            pick_id = _ensure_tipster_and_pick(
+                db, parsed, int(event["id"]), canonical_market, canonical_selection
+            )
+            quote = _latest_betano_quote(
+                db, int(event["id"]), canonical_market, canonical_selection, parsed.line
+            )
+            betano_current_odds = float(quote["odds"]) if quote else None
+            betano_captured_at = str(quote["captured_at"]) if quote else None
+
+            db.execute(
+                """UPDATE telegram_signals
+                   SET matched_event_id=?, match_status='matched',
+                       market=?, selection=?,
+                       betano_current_odds=?, betano_odds_captured_at=?, line=?,
+                       analysis_result=?
+                   WHERE signal_id=?""",
+                (
+                    event["id"], canonical_market, canonical_selection,
+                    betano_current_odds, betano_captured_at, parsed.line,
+                    json.dumps({
+                        "status": "matched_via_retry",
+                        "tipster_odds": parsed.odds,
+                        "betano_current_odds": betano_current_odds,
+                        "pick_id": pick_id,
+                    }),
+                    row["signal_id"],
+                ),
+            )
+            # Also update the corresponding telegram_messages row
+            db.execute(
+                """UPDATE telegram_messages SET status='processed', pick_id=?
+                   WHERE channel=? AND message_id=?""",
+                (pick_id, row["channel"], row["message_id"]),
+            )
+            resolved += 1
+
+        db.commit()
+
+    return {
+        "resolved": resolved,
+        "still_pending": still_pending,
+        "total": resolved + still_pending,
+    }
