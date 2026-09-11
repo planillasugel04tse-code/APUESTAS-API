@@ -17,3 +17,31 @@ jobs:
       - run: pip install -e .
       - run: pip install pytest httpx
       - run: pytest -q
+
+      - name: Start API
+        shell: bash
+        run: |
+          nohup uvicorn betano_analyzer.main:app --host 127.0.0.1 --port 8000 > api.log 2>&1 &
+          for i in {1..20}; do
+            if curl -fsS http://127.0.0.1:8000/health > /tmp/health.json; then
+              break
+            fi
+            sleep 1
+          done
+          cat /tmp/health.json
+          grep -q '"status":"ok"' /tmp/health.json
+
+      - name: API smoke test
+        shell: bash
+        run: |
+          curl -fsS http://127.0.0.1:8000/health
+          curl -fsS http://127.0.0.1:8000/openapi.json > /tmp/openapi.json
+          python - <<'PY'
+          import json
+          data = json.load(open('/tmp/openapi.json', encoding='utf-8'))
+          required = ['/health', '/api/v1/matches', '/api/v1/odds']
+          missing = [path for path in required if path not in data.get('paths', {})]
+          if missing:
+              raise SystemExit(f'Missing API paths: {missing}')
+          print('API smoke test: OK')
+          PY
