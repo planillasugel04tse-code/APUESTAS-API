@@ -28,4 +28,3 @@ dev = [
 pythonpath = ["src"]
 testpaths = ["tests"]
 tmp_path_retention_policy = "failed"
-basetemp = ".pytest_tmp"
