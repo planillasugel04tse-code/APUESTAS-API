@@ -2,9 +2,14 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 
+from betano_analyzer.db import initialize
 from betano_analyzer.main import app
 
 
+# TestClient created at module scope does not automatically enter the FastAPI
+# lifespan context. Initialize the schema explicitly so endpoint tests are
+# independent of server startup order.
+initialize()
 client = TestClient(app)
 
 
