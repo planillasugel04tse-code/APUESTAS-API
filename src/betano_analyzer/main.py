@@ -5,6 +5,7 @@ from fastapi import FastAPI
 
 from .api import router
 from .arbitrage_api import router as arbitrage_router
+from .bookmakers_api import router as bookmakers_router
 from .control_panel import control_panel_page
 from .db import initialize
 from .health_api import router as health_router
@@ -29,6 +30,7 @@ app = FastAPI(
 )
 app.include_router(router)
 app.include_router(arbitrage_router)
+app.include_router(bookmakers_router)
 app.include_router(health_router)
 app.include_router(model_router)
 app.include_router(oddspapi_router)
