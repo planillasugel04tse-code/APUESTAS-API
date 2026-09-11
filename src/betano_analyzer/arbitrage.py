@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from .db import connect
 
@@ -17,6 +18,15 @@ class Arbitrage:
     implied_sum: float
     profit_margin: float
     mode: str
+
+
+# Maximum age of a live odds snapshot before it is considered stale.
+# Can be overridden via LIVE_STALE_MINUTES environment variable.
+def _live_stale_minutes() -> int:
+    try:
+        return max(1, int(os.getenv("LIVE_STALE_MINUTES", "15")))
+    except (TypeError, ValueError):
+        return 15
 
 
 def _is_live(kickoff: object, now: datetime | None = None, status: object | None = None) -> bool:
@@ -65,8 +75,36 @@ def _captured_at(value: object) -> datetime | None:
         return None
 
 
-def find_arbitrage(limit: int = 100, *, live: bool = False, match_id: int | None = None) -> list[Arbitrage]:
+def _is_stale_live(captured_at_value: object, now: datetime, stale_minutes: int) -> bool:
+    """Return True if a live odds snapshot is older than the stale threshold."""
+    ts = _captured_at(captured_at_value)
+    if ts is None:
+        return True  # unknown timestamp is treated as stale in live mode
+    return (now - ts) > timedelta(minutes=stale_minutes)
+
+
+def find_arbitrage(
+    limit: int = 100,
+    *,
+    live: bool = False,
+    match_id: int | None = None,
+) -> list[Arbitrage]:
+    """Find arbitrage opportunities from stored odds.
+
+    Live mode behaviour
+    -------------------
+    When ``live=True``, odds snapshots older than ``LIVE_STALE_MINUTES`` (default 15)
+    are excluded. This prevents phantom surebet alerts from stale live prices.
+    A cuota live antigua NUNCA se trata como cuota live válida.
+
+    Pre-match behaviour
+    -------------------
+    Only the latest snapshot per bookmaker/outcome is used so that a previously
+    attractive price that has since moved cannot create a phantom arbitrage.
+    """
     now = datetime.now(timezone.utc)
+    stale_minutes = _live_stale_minutes()
+
     with connect() as db:
         rows = db.execute(
             """SELECT o.match_id,o.bookmaker,o.market,o.selection,o.line,o.odds,
@@ -78,15 +116,24 @@ def find_arbitrage(limit: int = 100, *, live: bool = False, match_id: int | None
             (match_id, match_id),
         ).fetchall()
 
-    # A surebet must use the latest available quote from each bookmaker for
-    # each outcome. Older snapshots can otherwise create a phantom arbitrage
-    # that is no longer available at the book.
+    # Keep only the latest snapshot per (match, market, line, bookmaker, outcome).
+    # For live mode, also enforce the freshness window.
     latest: dict[tuple[object, str, str, object, str], object] = {}
     for row in rows:
-        if _is_live(row["kickoff"], now, row["status"]) != live:
+        row_is_live = _is_live(row["kickoff"], now, row["status"])
+        if row_is_live != live:
+            continue
+        # Freshness gate for live odds only
+        if live and _is_stale_live(row["captured_at"], now, stale_minutes):
             continue
         outcome = _selection_key(row["selection"])
-        key = (row["match_id"], str(row["market"]).lower(), row["line"], str(row["bookmaker"]).lower(), outcome)
+        key = (
+            row["match_id"],
+            str(row["market"]).lower(),
+            row["line"],
+            str(row["bookmaker"]).lower(),
+            outcome,
+        )
         current = latest.get(key)
         if current is None:
             latest[key] = row
@@ -96,7 +143,7 @@ def find_arbitrage(limit: int = 100, *, live: bool = False, match_id: int | None
         if row_time is not None and (current_time is None or row_time > current_time):
             latest[key] = row
 
-    groups = defaultdict(list)
+    groups: dict[tuple, list] = defaultdict(list)
     for row in latest.values():
         groups[(row["match_id"], row["market"], row["line"])].append(row)
 
