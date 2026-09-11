@@ -5,6 +5,12 @@ import os
 from typing import Any
 
 import httpx
+from dotenv import load_dotenv
+
+# Load a local .env before provider configuration is evaluated. This keeps
+# Windows/local development consistent with CI and avoids requiring users to
+# export secrets in every new terminal session.
+load_dotenv()
 
 
 @dataclass(frozen=True)
@@ -80,7 +86,9 @@ async def fetch_json(
         )
     key = os.environ[provider.api_key_env]
     query = dict(params or {})
-    # OddsPapi authenticates with the API key in the query string.
+    # OddsPapi authenticates with the API key in the query string. Odds-API.io
+    # also accepts apiKey as a query parameter, so one transport path works for
+    # both providers used by the analyzer.
     query.setdefault("apiKey", key)
     url = provider.base_url.rstrip("/") + "/" + path.lstrip("/")
     # Avoid inheriting a system HTTP(S) proxy. On this Windows setup the
