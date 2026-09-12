@@ -1,0 +1,13 @@
+{
+  "name": "ANALISYS BETSTOTAL",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.13-bookworm",
+  "postCreateCommand": "python -m pip install --upgrade pip && python -m pip install -e '.[dev]'",
+  "forwardPorts": [8000],
+  "portsAttributes": {
+    "8000": {
+      "label": "ANALISYS BETSTOTAL",
+      "onAutoForward": "openBrowser"
+    }
+  },
+  "postStartCommand": "python -m uvicorn --app-dir src betano_analyzer.main:app --host 0.0.0.0 --port 8000 > /tmp/analysis-betstotal.log 2>&1 &"
+}
