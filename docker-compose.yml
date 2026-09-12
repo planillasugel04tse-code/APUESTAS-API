@@ -1,0 +1,15 @@
+services:
+  analysis-betstotal:
+    build: .
+    container_name: analysis-betstotal
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      PYTHONPATH: /app/src
+      TELEGRAM_ENABLED: "false"
+      ODDSPAPI_ENABLED: "false"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
