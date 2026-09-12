@@ -7,7 +7,7 @@ from .api import router
 from .arbitrage_api import router as arbitrage_router
 from .bookmakers_api import router as bookmakers_router
 from .bookmakers_panel import bookmakers_panel_page
-from .control_panel import control_panel_page
+from .control_panel_provider_patch import control_panel_with_provider_accounts
 from .db import initialize
 from .health_api import router as health_router
 from .model_api import router as model_router
@@ -53,7 +53,7 @@ def dashboard():
 
 @app.get("/panel", include_in_schema=False)
 def control_panel():
-    return control_panel_page()
+    return control_panel_with_provider_accounts()
 
 
 @app.get("/bookmakers", include_in_schema=False)
