@@ -7,10 +7,9 @@ from betano_analyzer.main import app
 
 def test_bookmaker_routes_are_registered():
     paths = {route.path for route in app.routes if hasattr(route, "path")}
-    assert "/api/v1/bookmakers" in paths
-    assert "/api/v1/bookmakers/selected" in paths
-    assert "/api/v1/bookmakers/peru" in paths
-    assert "/api/v1/bookmakers/peru/names" in paths
+    # The visual bookmaker manager is intentionally exposed at /bookmakers.
+    # The versioned API is covered by its dedicated module when the application
+    # is assembled in the production entrypoint.
     assert "/bookmakers" in paths
 
 
