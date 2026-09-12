@@ -12,6 +12,8 @@ from .db import initialize
 from .health_api import router as health_router
 from .model_api import router as model_router
 from .oddspapi_api import router as oddspapi_router
+from .provider_accounts_api import router as provider_accounts_router
+from .provider_accounts_panel import provider_accounts_page
 from .telegram_api import router as telegram_router
 from .telegram_test_web import telegram_test_page
 from .web_surebet_patch import dashboard_response
@@ -35,6 +37,7 @@ app.include_router(bookmakers_router)
 app.include_router(health_router)
 app.include_router(model_router)
 app.include_router(oddspapi_router)
+app.include_router(provider_accounts_router)
 app.include_router(telegram_router)
 
 
@@ -56,6 +59,11 @@ def control_panel():
 @app.get("/bookmakers", include_in_schema=False)
 def bookmakers_panel():
     return bookmakers_panel_page()
+
+
+@app.get("/provider-accounts", include_in_schema=False)
+def provider_accounts():
+    return provider_accounts_page()
 
 
 @app.get("/telegram-test", include_in_schema=False)
