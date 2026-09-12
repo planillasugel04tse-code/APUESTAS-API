@@ -1,7 +1,8 @@
 from contextlib import asynccontextmanager
 from datetime import date
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import Response
 
 from .api import router
 from .arbitrage_api import router as arbitrage_router
@@ -18,6 +19,7 @@ from .provider_accounts_panel import provider_accounts_page
 from .telegram_api import router as telegram_router
 from .telegram_test_web import telegram_test_page
 from .web_surebet_patch import dashboard_response
+from .branding import apply_product_branding
 
 
 @asynccontextmanager
@@ -33,6 +35,24 @@ app = FastAPI(
     description="Plataforma de análisis de cuotas, value bets, surebets y señales deportivas.",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def product_branding_middleware(request: Request, call_next):
+    response = await call_next(request)
+    content_type = response.headers.get("content-type", "")
+    if "text/html" not in content_type:
+        return response
+    body = b""
+    async for chunk in response.body_iterator:
+        body += chunk
+    text = body.decode("utf-8", errors="replace")
+    text = apply_product_branding(text)
+    headers = dict(response.headers)
+    headers.pop("content-length", None)
+    return Response(content=text, status_code=response.status_code, headers=headers, media_type="text/html")
+
+
 app.include_router(router)
 app.include_router(arbitrage_router)
 app.include_router(bookmakers_router)
