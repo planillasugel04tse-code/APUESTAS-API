@@ -56,7 +56,8 @@ DEFAULT_PROVIDERS = (
     ProviderConfig(
         "oddspapi",
         "odds",
-        os.getenv("ODDSPAPI_BASE_URL", "https://api.oddspapi.com"),
+        # OddsPapi's current v4 API host is api.oddspapi.io.
+        os.getenv("ODDSPAPI_BASE_URL", "https://api.oddspapi.io"),
         "ODDSPAPI_KEY",
         _enabled("ODDSPAPI_ENABLED", "ODDSPAPI_KEY"),
     ),
@@ -102,8 +103,8 @@ async def fetch_json(
     # both providers used by the analyzer.
     query.setdefault("apiKey", key)
     url = provider.base_url.rstrip("/") + "/" + path.lstrip("/")
-    # Avoid inheriting a system HTTP(S) proxy. On this Windows setup the
-    # proxy path causes TLSV1_UNRECOGNIZED_NAME before reaching OddsPapi.
+    # Avoid inheriting a system HTTP(S) proxy. On this Windows setup the proxy
+    # path causes TLSV1_UNRECOGNIZED_NAME before reaching OddsPapi.
     async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
         response = await client.get(url, params=query, headers={"Accept": "application/json"})
         response.raise_for_status()
