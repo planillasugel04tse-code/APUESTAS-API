@@ -2,6 +2,36 @@
 
 Plataforma de análisis deportivo orientada a cuotas, value bets, surebets/arbitraje, señales de Telegram, backtesting y seguimiento de resultados.
 
+## Entorno de prueba
+
+El repositorio incluye un entorno reproducible para probar la aplicación sin modificar tu instalación principal:
+
+### Opción 1 — GitHub Codespaces
+
+El proyecto incluye `.devcontainer/devcontainer.json`. Al abrir un Codespace sobre `main`, el entorno instala Python 3.13 y las dependencias, inicia automáticamente el servidor y reenvía el puerto 8000 al navegador.
+
+### Opción 2 — Docker en Windows
+
+```bash
+copy .env.example .env
+docker compose up --build
+```
+
+Después abre `http://localhost:8000/panel`.
+
+### Opción 3 — Python local
+
+```bash
+python -m venv .venv
+.venv\\Scripts\\activate
+pip install -e ".[dev]"
+python -m uvicorn --app-dir src betano_analyzer.main:app --reload
+```
+
+Panel: `http://127.0.0.1:8000/panel`  
+API: `http://127.0.0.1:8000/docs`  
+Salud: `http://127.0.0.1:8000/health`
+
 ## Estado
 
 - Producto: **ANALISYS BETSTOTAL**
@@ -15,27 +45,6 @@ Plataforma de análisis deportivo orientada a cuotas, value bets, surebets/arbit
 - Gestión de bookmakers: `/bookmakers`
 - Documentación API: `/docs`
 - Salud: `/health` y `/api/v1/health`
-
-## Instalación
-
-```bash
-python -m venv .venv
-.venv\\Scripts\\activate        # Windows
-# source .venv/bin/activate     # Linux/macOS
-
-pip install -e ".[dev]"
-```
-
-## Ejecución local
-
-```bash
-python -m uvicorn --app-dir src betano_analyzer.main:app --reload
-```
-
-Abrir:
-
-- `http://127.0.0.1:8000/panel`
-- `http://127.0.0.1:8000/docs`
 
 ## Variables sensibles
 
@@ -52,6 +61,8 @@ Variables principales:
 - `TELEGRAM_CHANNELS`
 - `TELEGRAM_ENABLED`
 - `DB_PATH`
+
+Para la prueba inicial, Telegram y los proveedores externos permanecen desactivados hasta introducir credenciales válidas.
 
 ## Arquitectura
 
@@ -99,10 +110,6 @@ El scanner consulta primero la cuenta y sus capacidades y puede explorar deporte
 
 La integración está diseñada para ejecutarse como proceso separado del servidor web, evitando iniciar automáticamente una sesión de Telegram en un despliegue web.
 
-## Seguridad
-
-No publiques API keys, hashes, teléfonos, archivos `.session`, bases de datos ni credenciales en el repositorio.
-
 ## Tests
 
 ```bash
@@ -110,3 +117,7 @@ python -m pytest -q
 ```
 
 El objetivo del repositorio es mantener un ciclo cerrado: **código → tests → CI → corrección → nueva validación**.
+
+## Despliegue web
+
+El repositorio contiene `Dockerfile` y `render.yaml` preparados para un servicio web. La creación de la cuenta/servicio externo y la autorización de despliegue son pasos de la plataforma de hosting; GitHub por sí solo no crea una URL pública persistente.
