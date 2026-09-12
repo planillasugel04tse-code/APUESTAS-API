@@ -28,8 +28,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Betano Live Analyzer",
+    title="ANALISYS BETSTOTAL",
     version="0.1.0",
+    description="Plataforma de análisis de cuotas, value bets, surebets y señales deportivas.",
     lifespan=lifespan,
 )
 app.include_router(router)
@@ -45,7 +46,7 @@ app.include_router(telegram_router)
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "service": "betano-live-analyzer"}
+    return {"status": "ok", "service": "analysis-betstotal"}
 
 
 @app.get("/", include_in_schema=False)
