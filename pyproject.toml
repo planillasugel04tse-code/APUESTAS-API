@@ -3,9 +3,9 @@ requires = ["setuptools>=75"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "betano-live-analyzer"
+name = "analysis-betstotal"
 version = "0.1.0"
-description = "Football odds and prediction analysis service"
+description = "ANALISYS BETSTOTAL - plataforma de análisis de cuotas y oportunidades deportivas"
 requires-python = ">=3.13"
 dependencies = [
   "fastapi>=0.115,<1",
