@@ -99,7 +99,8 @@ async def check_oddspapi(api_key: str) -> dict[str, Any]:
     key = api_key.strip()
     if not key:
         raise ValueError("La API Key es obligatoria")
-    url = "https://api.oddspapi.com/v4/account"
+    # OddsPapi current v4 API host.
+    url = "https://api.oddspapi.io/v4/account"
     async with httpx.AsyncClient(timeout=15.0, trust_env=False) as client:
         response = await client.get(url, params={"apiKey": key}, headers={"Accept": "application/json"})
         response.raise_for_status()
