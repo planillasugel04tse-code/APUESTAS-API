@@ -14,7 +14,7 @@ from .model_api import router as model_router
 from .oddspapi_api import router as oddspapi_router
 from .telegram_api import router as telegram_router
 from .telegram_test_web import telegram_test_page
-from .web import dashboard_response
+from .web_surebet_patch import dashboard_response
 
 
 @asynccontextmanager
