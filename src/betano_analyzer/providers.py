@@ -7,10 +7,10 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 
-# Load a local .env before provider configuration is evaluated. This keeps
-# Windows/local development consistent with CI and avoids requiring users to
-# export secrets in every new terminal session.
+# Load normal configuration first, then the local account-manager override.
+# .env.local is ignored by git and is intended for this machine only.
 load_dotenv()
+load_dotenv(".env.local", override=True)
 
 
 @dataclass(frozen=True)
