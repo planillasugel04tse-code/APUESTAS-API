@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: betano-live-analyzer
+    name: analysis-betstotal
     runtime: docker
     plan: free
     healthCheckPath: /health
