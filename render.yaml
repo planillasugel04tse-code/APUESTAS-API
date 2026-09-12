@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: betano-live-analyzer
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHONPATH
+        value: /app/src
+      - key: TELEGRAM_ENABLED
+        value: "false"
+      - key: ODDSPAPI_ENABLED
+        value: "false"
