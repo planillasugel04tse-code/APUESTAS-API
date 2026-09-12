@@ -1,0 +1,30 @@
+from __future__ import annotations
+
+from fastapi.responses import HTMLResponse
+
+
+def provider_accounts_page() -> HTMLResponse:
+    html = r'''<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cuentas de proveedores · Betano Live Analyzer</title>
+<style>
+body{font-family:Segoe UI,Arial,sans-serif;background:#f3f6fb;color:#172033;margin:0}header{background:#111b2e;color:#fff;padding:24px}main{max-width:1100px;margin:auto;padding:20px}.card{background:#fff;border:1px solid #dde5f0;border-radius:16px;padding:20px;margin-bottom:16px;box-shadow:0 5px 18px #1720330d}.fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.field{display:flex;flex-direction:column;gap:5px}.field.full{grid-column:1/-1}label{font-size:12px;font-weight:800;color:#4d5a70}input,select{width:100%;border:1px solid #ccd6e5;border-radius:9px;padding:10px;font:inherit;box-sizing:border-box}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}button{border:0;border-radius:9px;padding:10px 14px;background:#17233a;color:#fff;font-weight:800;cursor:pointer}button.success{background:#0f8a62}button.secondary{background:#e8edf5;color:#25324a}.result{background:#0b1220;color:#d9e6fb;border-radius:10px;padding:14px;white-space:pre-wrap;font:12px/1.5 monospace;min-height:35px;margin-top:12px}.account{border:1px solid #d9e2ef;border-radius:12px;padding:14px;margin-top:10px}.active{border-color:#0f8a62;background:#f0fbf7}.pill{display:inline-block;border-radius:999px;padding:4px 8px;background:#eaf8f3;color:#08734f;font-size:11px;font-weight:800}.hint{color:#68758a;font-size:13px;line-height:1.5}.warn{background:#fff8e6;border:1px solid #f3d27a;padding:12px;border-radius:10px;font-size:13px}.links{display:flex;gap:10px;flex-wrap:wrap}.links a{color:#1268a3;font-weight:700}@media(max-width:750px){.fields{grid-template-columns:1fr}.field.full{grid-column:auto}}
+</style></head>
+<body><header><h1>🔐 Cuentas de proveedores</h1><p>Gestiona varias cuentas de OddsPapi y enlaza una cuenta activa con el Analyzer.</p></header>
+<main>
+<div class="card"><h2>Agregar / actualizar cuenta</h2><p class="hint">Para OddsPapi, el Analyzer necesita la <strong>API Key</strong>, no tu contraseña de inicio de sesión. El correo solo identifica la cuenta. La API Key se guarda localmente en tu instalación y no se muestra completa después de guardarla.</p><div class="warn">⚠️ No pongas aquí la contraseña de tu cuenta de OddsPapi. Usa la API Key que te entrega OddsPapi.</div><div class="fields" style="margin-top:12px"><div class="field"><label>Proveedor</label><select id="provider"><option value="oddspapi">OddsPapi</option></select></div><div class="field"><label>Nombre de la cuenta</label><input id="label" placeholder="Ej. Gratis Perú"></div><div class="field"><label>Correo de la cuenta</label><input id="email" type="email" placeholder="tu-correo@..." autocomplete="off"></div><div class="field"><label>API Key *</label><input id="api_key" type="password" placeholder="Pega aquí tu API Key" autocomplete="off"></div></div><div class="actions"><button class="success" onclick="checkAccount()">🟢 PROBAR CONEXIÓN</button><button onclick="saveAccount()">GUARDAR CUENTA</button><a href="/panel">← Volver al panel</a></div><div id="result" class="result">Sin comprobar.</div></div>
+<div class="card"><h2>📊 Cuentas guardadas</h2><p class="hint">La cuenta activa es la que queda enlazada al Analyzer para las consultas de OddsPapi. Comprobar la cuenta consulta el estado de la cuenta, no las cuotas.</p><div id="accounts">Cargando...</div></div>
+</main>
+<script>
+const $=id=>document.getElementById(id);const val=id=>$(id).value;
+async function req(url,opts={}){const r=await fetch(url,opts);let d;try{d=await r.json()}catch{d=await r.text()}if(!r.ok)throw new Error(typeof d==='object'?(d.detail||JSON.stringify(d)):d);return d}
+function show(d){$('result').textContent=typeof d==='string'?d:JSON.stringify(d,null,2)}
+async function checkAccount(){if(!val('api_key').trim()){show('Escribe la API Key primero.');return}show('Comprobando cuenta...');try{show(await req('/api/v1/provider-accounts/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:val('provider'),label:val('label'),email:val('email'),api_key:val('api_key')})}))}catch(e){show('ERROR: '+e.message)}}
+async function saveAccount(){if(!val('api_key').trim()){show('La API Key es obligatoria.');return}show('Guardando cuenta localmente...');try{const d=await req('/api/v1/provider-accounts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:val('provider'),label:val('label'),email:val('email'),api_key:val('api_key')})});show(d);$('api_key').value='';await loadAccounts()}catch(e){show('ERROR: '+e.message)}}
+async function activate(id){show('Activando cuenta...');try{show(await req('/api/v1/provider-accounts/'+encodeURIComponent(id)+'/activate',{method:'POST'}));await loadAccounts()}catch(e){show('ERROR: '+e.message)}}
+async function loadAccounts(){try{const d=await req('/api/v1/provider-accounts');const rows=d.accounts||[];$('accounts').innerHTML=rows.length?rows.map(a=>`<div class="account ${a.active?'active':''}"><strong>${escapeHtml(a.label||a.id)}</strong> ${a.active?'<span class="pill">🟢 ACTIVA</span>':'<span>⚪ Inactiva</span>'}<div>Proveedor: ${escapeHtml(a.provider)} · Correo: ${escapeHtml(a.email||'no indicado')}</div><div>API Key: ${escapeHtml(a.api_key_masked)}</div>${a.active?'':'<div class="actions"><button class="secondary" onclick="activate(\''+escapeJs(a.id)+'\')">USAR ESTA CUENTA</button></div>'}</div>`).join(''):'No hay cuentas guardadas todavía.'}catch(e){$('accounts').textContent='ERROR: '+e.message}}
+function escapeHtml(s){return String(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
+function escapeJs(s){return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'")}
+loadAccounts();
+</script></body></html>'''
+    return HTMLResponse(html)
