@@ -23,7 +23,10 @@ class ProviderConfig:
 
     @property
     def configured(self) -> bool:
-        return bool(self.enabled and self.base_url and self.api_key_env and os.getenv(self.api_key_env))
+        # Re-read the environment so activating an account from the UI takes
+        # effect immediately, without requiring a server restart.
+        enabled = _enabled_for_provider(self.name, self.api_key_env, self.enabled)
+        return bool(enabled and self.base_url and self.api_key_env and os.getenv(self.api_key_env))
 
 
 def _enabled(env_name: str, key_env: str | None = None) -> bool:
@@ -32,6 +35,14 @@ def _enabled(env_name: str, key_env: str | None = None) -> bool:
     if explicit is not None:
         return explicit.strip().lower() in {"1", "true", "yes", "on"}
     return bool(key_env and os.getenv(key_env))
+
+
+def _enabled_for_provider(name: str, key_env: str | None, default: bool) -> bool:
+    env_name = "ODDSPAPI_ENABLED" if name == "oddspapi" else "ODDS_API_IO_ENABLED"
+    explicit = os.getenv(env_name)
+    if explicit is not None:
+        return explicit.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(key_env and os.getenv(key_env)) or default
 
 
 DEFAULT_PROVIDERS = (
@@ -58,7 +69,7 @@ def provider_status() -> list[dict[str, Any]]:
             "name": p.name,
             "kind": p.kind,
             "base_url": p.base_url,
-            "enabled": p.enabled,
+            "enabled": _enabled_for_provider(p.name, p.api_key_env, p.enabled),
             "configured": p.configured,
             "api_key_env": p.api_key_env,
         }
