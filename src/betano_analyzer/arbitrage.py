@@ -8,6 +8,23 @@ from datetime import datetime, timedelta, timezone
 from .db import connect
 
 
+PERU_LEAGUE_KEYWORDS = (
+    "liga 1",
+    "liga 2",
+    "liga 3",
+    "liga femenina",
+    "liga femenina peru",
+    "copa peru",
+    "copa perú",
+    "primera division peru",
+    "primera división peru",
+    "segunda division peru",
+    "segunda división peru",
+    "liga peruana",
+    "torneo peruano",
+)
+
+
 @dataclass(frozen=True)
 class Arbitrage:
     match_id: int
@@ -18,10 +35,10 @@ class Arbitrage:
     implied_sum: float
     profit_margin: float
     mode: str
+    competition: str = ""
+    scope: str = "world"
 
 
-# Maximum age of a live odds snapshot before it is considered stale.
-# Can be overridden via LIVE_STALE_MINUTES environment variable.
 def _live_stale_minutes() -> int:
     try:
         return max(1, int(os.getenv("LIVE_STALE_MINUTES", "15")))
@@ -30,10 +47,6 @@ def _live_stale_minutes() -> int:
 
 
 def _is_live(kickoff: object, now: datetime | None = None, status: object | None = None) -> bool:
-    """Prefer the provider/database match state over kickoff-time inference.
-
-    Kickoff is only a fallback for legacy rows where no usable status exists.
-    """
     normalized_status = str(status or "").strip().lower()
     if normalized_status in {"live", "in_play", "inplay", "started"}:
         return True
@@ -41,7 +54,6 @@ def _is_live(kickoff: object, now: datetime | None = None, status: object | None
         return False
     if normalized_status in {"finished", "ended", "cancelled", "canceled", "postponed"}:
         return False
-
     now = now or datetime.now(timezone.utc)
     try:
         value = datetime.fromisoformat(str(kickoff).replace("Z", "+00:00"))
@@ -76,11 +88,36 @@ def _captured_at(value: object) -> datetime | None:
 
 
 def _is_stale_live(captured_at_value: object, now: datetime, stale_minutes: int) -> bool:
-    """Return True if a live odds snapshot is older than the stale threshold."""
     ts = _captured_at(captured_at_value)
     if ts is None:
-        return True  # unknown timestamp is treated as stale in live mode
+        return True
     return (now - ts) > timedelta(minutes=stale_minutes)
+
+
+def _normalize_text(value: object) -> str:
+    return " ".join(str(value or "").strip().lower().replace("_", " ").split())
+
+
+def _is_peru_competition(competition: object) -> bool:
+    text = _normalize_text(competition)
+    return any(keyword in text for keyword in PERU_LEAGUE_KEYWORDS)
+
+
+def _scope_for_competition(competition: object) -> str:
+    return "peru" if _is_peru_competition(competition) else "world"
+
+
+def _scope_matches(scope: str, competition: object) -> bool:
+    normalized = str(scope or "all").strip().lower()
+    if normalized not in {"all", "peru", "world"}:
+        raise ValueError("scope must be one of: all, peru, world")
+    return normalized == "all" or _scope_for_competition(competition) == normalized
+
+
+def _league_matches(league: str | None, competition: object) -> bool:
+    if not league:
+        return True
+    return _normalize_text(league) in _normalize_text(competition)
 
 
 def find_arbitrage(
@@ -88,27 +125,21 @@ def find_arbitrage(
     *,
     live: bool = False,
     match_id: int | None = None,
+    scope: str = "all",
+    league: str | None = None,
 ) -> list[Arbitrage]:
-    """Find arbitrage opportunities from stored odds.
+    """Find stored-odds arbitrage, optionally separated by Peru/world and league."""
+    normalized_scope = str(scope or "all").strip().lower()
+    if normalized_scope not in {"all", "peru", "world"}:
+        raise ValueError("scope must be one of: all, peru, world")
 
-    Live mode behaviour
-    -------------------
-    When ``live=True``, odds snapshots older than ``LIVE_STALE_MINUTES`` (default 15)
-    are excluded. This prevents phantom surebet alerts from stale live prices.
-    A cuota live antigua NUNCA se trata como cuota live válida.
-
-    Pre-match behaviour
-    -------------------
-    Only the latest snapshot per bookmaker/outcome is used so that a previously
-    attractive price that has since moved cannot create a phantom arbitrage.
-    """
     now = datetime.now(timezone.utc)
     stale_minutes = _live_stale_minutes()
 
     with connect() as db:
         rows = db.execute(
             """SELECT o.match_id,o.bookmaker,o.market,o.selection,o.line,o.odds,
-                      o.captured_at,m.home_team,m.away_team,m.kickoff,m.status
+                      o.captured_at,m.home_team,m.away_team,m.kickoff,m.status,m.competition
                FROM odds o JOIN matches m ON m.id=o.match_id
                WHERE o.odds > 1
                  AND (? IS NULL OR o.match_id = ?)
@@ -116,14 +147,14 @@ def find_arbitrage(
             (match_id, match_id),
         ).fetchall()
 
-    # Keep only the latest snapshot per (match, market, line, bookmaker, outcome).
-    # For live mode, also enforce the freshness window.
     latest: dict[tuple[object, str, str, object, str], object] = {}
     for row in rows:
+        competition = row["competition"] or ""
+        if not _scope_matches(normalized_scope, competition) or not _league_matches(league, competition):
+            continue
         row_is_live = _is_live(row["kickoff"], now, row["status"])
         if row_is_live != live:
             continue
-        # Freshness gate for live odds only
         if live and _is_stale_live(row["captured_at"], now, stale_minutes):
             continue
         outcome = _selection_key(row["selection"])
@@ -173,6 +204,7 @@ def find_arbitrage(
         selected = {key: best[key] for key in required}
         implied_sum = sum(1.0 / quote[1] for quote in selected.values())
         if implied_sum < 1.0:
+            competition = quotes[0]["competition"] or ""
             result.append(
                 Arbitrage(
                     match_id=current_match_id,
@@ -183,6 +215,8 @@ def find_arbitrage(
                     implied_sum=implied_sum,
                     profit_margin=(1.0 / implied_sum) - 1.0,
                     mode="live" if live else "pre_match",
+                    competition=competition,
+                    scope=_scope_for_competition(competition),
                 )
             )
             if len(result) >= limit:
