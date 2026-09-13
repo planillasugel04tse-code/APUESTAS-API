@@ -26,8 +26,13 @@ def _poisson_pmf(k: int, lam: float) -> float:
 
 
 def probability_between_lines(lower_line: float, upper_line: float, expected_total: float) -> float:
-    """Approximate P(lower_line < total < upper_line) for an integer total."""
-    if expected_total < 0 or upper_line <= lower_line:
+    """Probability of an integer total strictly inside a meaningful line gap.
+
+    A one-unit half-line interval such as 2.5–3.5 is treated as having no
+    usable integer gap. A wider interval (for example 8.5–10.5) can contain
+    integer totals and is evaluated with a Poisson approximation.
+    """
+    if expected_total < 0 or upper_line <= lower_line or upper_line - lower_line <= 1.0:
         return 0.0
     first = int(lower_line) + 1
     last = int(upper_line - 1e-12)
