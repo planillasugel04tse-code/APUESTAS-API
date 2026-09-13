@@ -16,6 +16,9 @@ dependencies = [
   "python-dotenv>=1.0,<2",
 ]
 
+[project.scripts]
+betstotal-telegram = "betano_analyzer.telegram.listener:main"
+
 [project.optional-dependencies]
 dev = [
   "pytest>=8,<9",
