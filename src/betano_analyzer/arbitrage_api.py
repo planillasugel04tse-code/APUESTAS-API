@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from . import sync_service
 from .arbitrage import find_arbitrage
+from .oddspapi_global_live import sync_global_live
 
 router = APIRouter(prefix="/api/v1/arbitrage", tags=["arbitrage"])
 
@@ -49,16 +50,28 @@ async def live(
     scope: Scope = Query(default="all"),
     league: str | None = Query(default=None, max_length=120),
 ):
-    """Refresh live odds only when the user explicitly clicks the live radar."""
+    """Refresh live odds on demand using the selected geographic scope."""
     try:
-        sync = await sync_service.sync_oddspapi_betano_pe(
-            hours=hours,
-            limit_matches=limit_matches,
-            include_live=True,
-            live_only=True,
-        )
+        if scope == "peru":
+            sync = await sync_service.sync_oddspapi_betano_pe(
+                hours=hours,
+                limit_matches=limit_matches,
+                include_live=True,
+                live_only=True,
+            )
+            refresh_scope = "peru"
+        else:
+            # World/all uses provider-discovered live-enabled bookmakers instead
+            # of silently falling back to Betano PE.
+            sync = await sync_global_live(
+                hours=hours,
+                limit_matches=limit_matches,
+                bookmaker_cap=10,
+            )
+            refresh_scope = "world"
     except (RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
     opportunities = find_arbitrage(limit, live=True, scope=scope, league=league)
     return _result_payload(
         "live",
@@ -66,6 +79,7 @@ async def live(
         scope=scope,
         league=league,
         refreshed_on_demand=True,
+        refresh_scope=refresh_scope,
         sync=sync.__dict__,
     )
 
