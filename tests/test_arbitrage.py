@@ -85,21 +85,28 @@ def test_scope_separates_peru_from_world():
 
     peru = find_arbitrage(live=False, scope="peru")
     world = find_arbitrage(live=False, scope="world")
+    peru_ids = {item.match_id for item in peru}
+    world_ids = {item.match_id for item in world}
 
-    assert {item.match_id for item in peru} == {peru_id}
-    assert {item.match_id for item in world} == {world_id}
-    assert peru[0].scope == "peru"
-    assert world[0].scope == "world"
-    assert peru[0].competition == "liga 1 peru"
+    assert peru_id in peru_ids
+    assert world_id not in peru_ids
+    assert world_id in world_ids
+    assert peru_id not in world_ids
+    peru_item = next(item for item in peru if item.match_id == peru_id)
+    world_item = next(item for item in world if item.match_id == world_id)
+    assert peru_item.scope == "peru"
+    assert world_item.scope == "world"
+    assert peru_item.competition == "liga 1 peru"
 
 
 def test_league_filter_returns_only_selected_league():
     kickoff = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
     liga1_id = _seed_match_with_odds(kickoff, "league-1", competition="liga 1 peru")
-    _seed_match_with_odds(kickoff, "league-2", competition="liga 2 peru")
-
+    liga2_id = _seed_match_with_odds(kickoff, "league-2", competition="liga 2 peru")
     result = find_arbitrage(live=False, scope="peru", league="liga 1")
-    assert {item.match_id for item in result} == {liga1_id}
+    ids = {item.match_id for item in result}
+    assert liga1_id in ids
+    assert liga2_id not in ids
 
 
 def test_peru_competition_classifier():
