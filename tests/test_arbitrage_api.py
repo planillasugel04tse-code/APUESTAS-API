@@ -20,7 +20,7 @@ def test_pre_match_endpoint_uses_stored_odds_only(client):
     assert "opportunities" in body
 
 
-def test_live_endpoint_requests_live_only(monkeypatch, client):
+def test_live_peru_endpoint_requests_live_only(monkeypatch, client):
     calls = {}
 
     async def fake_sync(**kwargs):
@@ -29,14 +29,41 @@ def test_live_endpoint_requests_live_only(monkeypatch, client):
 
     monkeypatch.setattr("betano_analyzer.sync_service.sync_oddspapi_betano_pe", fake_sync)
 
-    response = client.post("/api/v1/arbitrage/live", params={"limit": 5, "hours": 1, "limit_matches": 3})
+    response = client.post(
+        "/api/v1/arbitrage/live",
+        params={"limit": 5, "hours": 1, "limit_matches": 3, "scope": "peru"},
+    )
 
     assert response.status_code == 200
     assert calls["include_live"] is True
     assert calls["live_only"] is True
     assert calls["hours"] == 1
     assert calls["limit_matches"] == 3
+    assert response.json()["refresh_scope"] == "peru"
     assert response.json()["refreshed_on_demand"] is True
+
+
+def test_live_world_endpoint_uses_global_provider_sync(monkeypatch, client):
+    calls = {}
+
+    async def fake_global(**kwargs):
+        calls.update(kwargs)
+        return type("Summary", (), {"__dict__": {"bookmakers_discovered": 12, "bookmakers_selected": 10, "fixtures_seen": 3, "fixtures_saved": 3, "odds_seen": 20, "odds_saved": 20, "bookmaker_cap": 10, "scope": "world", "sport": "football"}})()
+
+    monkeypatch.setattr("betano_analyzer.arbitrage_api.sync_global_live", fake_global)
+    monkeypatch.setattr("betano_analyzer.arbitrage_api.find_arbitrage", lambda *a, **kw: [])
+
+    response = client.post(
+        "/api/v1/arbitrage/live",
+        params={"limit": 5, "hours": 1, "limit_matches": 3, "scope": "world"},
+    )
+
+    assert response.status_code == 200
+    assert calls == {"hours": 1, "limit_matches": 3, "bookmaker_cap": 10}
+    body = response.json()
+    assert body["refresh_scope"] == "world"
+    assert body["sync"]["bookmakers_selected"] == 10
+    assert body["refreshed_on_demand"] is True
 
 
 def test_verify_endpoint_refreshes_only_requested_match(monkeypatch, client):
@@ -46,8 +73,6 @@ def test_verify_endpoint_refreshes_only_requested_match(monkeypatch, client):
         calls["match_id"] = match_id
         return SyncSummary(8, 1, 0, 3, 3, 0, 0)
 
-    # match_id=42 is a synthetic test fixture: we must ensure find_arbitrage
-    # returns nothing for it regardless of what is stored in the local DB.
     monkeypatch.setattr("betano_analyzer.arbitrage_api.find_arbitrage", lambda *a, **kw: [])
     monkeypatch.setattr("betano_analyzer.sync_service.verify_oddspapi_betano_pe_match", fake_verify)
     response = client.post("/api/v1/arbitrage/verify/42", params={"limit": 5})
