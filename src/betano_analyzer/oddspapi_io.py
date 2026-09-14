@@ -24,6 +24,13 @@ _MARKET_CATALOG_CACHE: list[dict[str, Any]] | None = None
 _MARKET_CATALOG_CACHE_AT: datetime | None = None
 _MARKET_CATALOG_TTL_SECONDS = 300
 
+_BOOKMAKER_CACHE: list[dict[str, Any]] | None = None
+_BOOKMAKER_CACHE_AT: datetime | None = None
+_BOOKMAKER_CACHE_TTL_SECONDS = 900
+
+_ODDS_CACHE: dict[tuple[str, tuple[str, ...]], tuple[datetime, dict[str, Any]]] = {}
+_ODDS_CACHE_TTL_SECONDS = 2
+
 
 def _iso(value: Any) -> str:
     if not value:
@@ -116,118 +123,71 @@ def _market_catalog(markets: list[dict[str, Any]]) -> tuple[dict[int, tuple[str,
 
 
 _TYPE_ALIASES = {
-    "1x2": "1x2",
-    "totals": "goals",
-    "total": "goals",
-    "goals": "goals",
-    "btts": "btts",
-    "both_teams_to_score": "btts",
-    "corners": "corners",
-    "cards": "cards",
-    "asian_handicap": "asian_handicap",
-    "handicap": "asian_handicap",
+    "1x2": "1x2", "totals": "goals", "total": "goals", "goals": "goals",
+    "btts": "btts", "both_teams_to_score": "btts", "corners": "corners",
+    "cards": "cards", "asian_handicap": "asian_handicap", "handicap": "asian_handicap",
     "spread": "asian_handicap",
 }
 
 
 def _period_key(period: str, fallback_market: str) -> str:
     text = str(period or "").strip().lower().replace("-", " ").replace("_", " ")
-    if text in {"fulltime", "full time", "ft", "match", "90", "90 minutes"}:
-        return "ft"
-    if text in {"1h", "1st half", "first half", "firsthalf", "1 half"}:
-        return "1h"
-    if text in {"2h", "2nd half", "second half", "secondhalf", "2 half"}:
-        return "2h"
-    if "1st" in text or "first" in text:
-        return "1h"
-    if "2nd" in text or "second" in text:
-        return "2h"
+    if text in {"fulltime", "full time", "ft", "match", "90", "90 minutes"}: return "ft"
+    if text in {"1h", "1st half", "first half", "firsthalf", "1 half"} or "1st" in text or "first" in text: return "1h"
+    if text in {"2h", "2nd half", "second half", "secondhalf", "2 half"} or "2nd" in text or "second" in text: return "2h"
     if "_" in fallback_market:
         suffix = fallback_market.rsplit("_", 1)[-1]
-        if suffix in {"ft", "1h", "2h"}:
-            return suffix
+        if suffix in {"ft", "1h", "2h"}: return suffix
     return "ft"
 
 
 def _canonical_market(market_name: str, market_type: str, period: str, selection: str) -> tuple[str, str]:
     canonical_market, canonical_selection = normalize_market(market_name, selection, period)
-    market_type_key = str(market_type or "").strip().lower()
-    base = _TYPE_ALIASES.get(market_type_key)
-
-    # OddsPapi's catalog marketType is authoritative when available. Some
-    # catalog names normalize to market:<id>, which must never reach storage.
+    base = _TYPE_ALIASES.get(str(market_type or "").strip().lower())
     if base:
-        period_key = _period_key(period, canonical_market)
-        canonical_market = f"{base}_{period_key}"
-
+        canonical_market = f"{base}_{_period_key(period, canonical_market)}"
         selection_key = str(canonical_selection or "").strip().lower()
         if base == "1x2":
-            selection_aliases = {
-                "1": "home", "home": "home", "local": "home",
-                "x": "draw", "draw": "draw", "tie": "draw",
-                "2": "away", "away": "away", "visitor": "away",
-            }
-            canonical_selection = selection_aliases.get(selection_key, canonical_selection)
+            canonical_selection = {"1":"home","home":"home","local":"home","x":"draw","draw":"draw","tie":"draw","2":"away","away":"away","visitor":"away"}.get(selection_key, canonical_selection)
         elif base in {"goals", "corners", "cards"}:
-            if selection_key in {"o", "over", "más", "mas"}:
-                canonical_selection = "over"
-            elif selection_key in {"u", "under", "menos"}:
-                canonical_selection = "under"
+            if selection_key in {"o", "over", "más", "mas"}: canonical_selection = "over"
+            elif selection_key in {"u", "under", "menos"}: canonical_selection = "under"
         elif base == "btts":
-            if selection_key in {"yes", "y", "si", "sí"}:
-                canonical_selection = "yes"
-            elif selection_key in {"no", "n"}:
-                canonical_selection = "no"
-
+            if selection_key in {"yes", "y", "si", "sí"}: canonical_selection = "yes"
+            elif selection_key in {"no", "n"}: canonical_selection = "no"
     return canonical_market, canonical_selection
 
 
 def parse_odds(payload: dict[str, Any], *, bookmaker: str = ODDSPAPI_BETANO_PE, market_catalog: list[dict[str, Any]] | None = None) -> list[NormalizedOdd]:
     fixture_id = payload.get("fixtureId")
-    if fixture_id is None:
-        return []
+    if fixture_id is None: return []
     market_meta, outcome_names = _market_catalog(market_catalog or [])
     bookmaker_data = (payload.get("bookmakerOdds") or {}).get(bookmaker)
-    if not isinstance(bookmaker_data, dict) or bookmaker_data.get("suspended") or not bookmaker_data.get("bookmakerIsActive", True):
-        return []
+    if not isinstance(bookmaker_data, dict) or bookmaker_data.get("suspended") or not bookmaker_data.get("bookmakerIsActive", True): return []
     captured = _iso(payload.get("updatedAt"))
     rows: list[NormalizedOdd] = []
     for market_id, market in (bookmaker_data.get("markets") or {}).items():
-        if not isinstance(market, dict) or not market.get("marketActive", True):
-            continue
-        try:
-            market_id_int = int(market_id)
-        except (TypeError, ValueError):
-            market_id_int = 0
+        if not isinstance(market, dict) or not market.get("marketActive", True): continue
+        try: market_id_int = int(market_id)
+        except (TypeError, ValueError): market_id_int = 0
         meta = market_meta.get(market_id_int)
         market_name = meta[0] if meta else f"market:{market_id}"
         catalog_line = meta[1] if meta else None
         period = meta[2] if meta else ""
         market_type = meta[3] if meta else ""
         for outcome_id, outcome in (market.get("outcomes") or {}).items():
-            if not isinstance(outcome, dict):
-                continue
-            try:
-                outcome_id_int = int(outcome_id)
-            except (TypeError, ValueError):
-                outcome_id_int = 0
+            if not isinstance(outcome, dict): continue
+            try: outcome_id_int = int(outcome_id)
+            except (TypeError, ValueError): outcome_id_int = 0
             selection_name = outcome_names.get((market_id_int, outcome_id_int), str(outcome_id))
             for player in (outcome.get("players") or {}).values():
-                if not isinstance(player, dict) or not player.get("active", True):
-                    continue
-                try:
-                    price = float(player["price"])
-                except (KeyError, TypeError, ValueError):
-                    continue
-                if price <= 1:
-                    continue
+                if not isinstance(player, dict) or not player.get("active", True): continue
+                try: price = float(player["price"])
+                except (KeyError, TypeError, ValueError): continue
+                if price <= 1: continue
                 outcome_key = player.get("bookmakerOutcomeId") or selection_name
-                line = _line_from_outcome_id(outcome_key)
-                if line is None:
-                    line = catalog_line
-                selection = selection_name
-                if player.get("playerName"):
-                    selection = f"{selection_name}:{player['playerName']}"
+                line = _line_from_outcome_id(outcome_key) or catalog_line
+                selection = selection_name if not player.get("playerName") else f"{selection_name}:{player['playerName']}"
                 canonical_market, canonical_selection = _canonical_market(market_name, market_type, period, selection)
                 rows.append(NormalizedOdd(str(fixture_id), bookmaker, canonical_market, canonical_selection, price, _iso(player.get("changedAt")) if player.get("changedAt") else captured, line))
     return rows
@@ -236,16 +196,45 @@ def parse_odds(payload: dict[str, Any], *, bookmaker: str = ODDSPAPI_BETANO_PE, 
 async def fetch_market_catalog(*, force: bool = False) -> list[dict[str, Any]]:
     global _MARKET_CATALOG_CACHE, _MARKET_CATALOG_CACHE_AT
     now = datetime.now(timezone.utc)
-    if not force and _MARKET_CATALOG_CACHE is not None and _MARKET_CATALOG_CACHE_AT is not None:
-        age = (now - _MARKET_CATALOG_CACHE_AT).total_seconds()
-        if age < _MARKET_CATALOG_TTL_SECONDS:
-            return _MARKET_CATALOG_CACHE
+    if not force and _MARKET_CATALOG_CACHE is not None and _MARKET_CATALOG_CACHE_AT is not None and (now - _MARKET_CATALOG_CACHE_AT).total_seconds() < _MARKET_CATALOG_TTL_SECONDS:
+        return _MARKET_CATALOG_CACHE
     payload = await fetch_json("oddspapi", "/v4/markets", {"language": "en"})
     _MARKET_CATALOG_CACHE = payload if isinstance(payload, list) else []
     _MARKET_CATALOG_CACHE_AT = now
     return _MARKET_CATALOG_CACHE
 
 
+async def fetch_bookmakers(*, force: bool = False) -> list[dict[str, Any]]:
+    global _BOOKMAKER_CACHE, _BOOKMAKER_CACHE_AT
+    now = datetime.now(timezone.utc)
+    if not force and _BOOKMAKER_CACHE is not None and _BOOKMAKER_CACHE_AT is not None and (now - _BOOKMAKER_CACHE_AT).total_seconds() < _BOOKMAKER_CACHE_TTL_SECONDS:
+        return _BOOKMAKER_CACHE
+    payload = await fetch_json("oddspapi", "/v4/bookmakers")
+    if isinstance(payload, list): _BOOKMAKER_CACHE = payload
+    elif isinstance(payload, dict): _BOOKMAKER_CACHE = next((v for v in payload.values() if isinstance(v, list)), [])
+    else: _BOOKMAKER_CACHE = []
+    _BOOKMAKER_CACHE_AT = now
+    return _BOOKMAKER_CACHE
+
+
+async def fetch_odds_multi_bookmaker(fixture_id: str, bookmakers: list[str], *, market_catalog: list[dict[str, Any]] | None = None, cache_ttl: float = _ODDS_CACHE_TTL_SECONDS) -> dict[str, list[NormalizedOdd]]:
+    normalized = tuple(dict.fromkeys(str(x).strip() for x in bookmakers if str(x).strip()))
+    if not normalized: return {}
+    key = (str(fixture_id), normalized)
+    now = datetime.now(timezone.utc)
+    cached = _ODDS_CACHE.get(key)
+    if cached and (now - cached[0]).total_seconds() < cache_ttl:
+        payload = cached[1]
+    else:
+        payload = await fetch_json("oddspapi", "/v4/odds", {"fixtureId": fixture_id, "bookmakers": ",".join(normalized), "oddsFormat": "decimal", "language": "en"})
+        payload = payload if isinstance(payload, dict) else {}
+        _ODDS_CACHE[key] = (now, payload)
+    result: dict[str, list[NormalizedOdd]] = {}
+    for bookmaker in normalized:
+        result[bookmaker] = parse_odds(payload, bookmaker=bookmaker, market_catalog=market_catalog)
+    return result
+
+
 async def fetch_odds(fixture_id: str, *, bookmaker: str = ODDSPAPI_BETANO_PE, market_catalog: list[dict[str, Any]] | None = None) -> list[NormalizedOdd]:
-    payload = await fetch_json("oddspapi", "/v4/odds", {"fixtureId": fixture_id, "bookmakers": bookmaker, "oddsFormat": "decimal", "language": "en"})
-    return parse_odds(payload if isinstance(payload, dict) else {}, bookmaker=bookmaker, market_catalog=market_catalog)
+    grouped = await fetch_odds_multi_bookmaker(fixture_id, [bookmaker], market_catalog=market_catalog)
+    return grouped.get(bookmaker, [])
