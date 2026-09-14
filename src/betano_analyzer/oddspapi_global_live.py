@@ -6,12 +6,12 @@ from typing import Any
 
 from .db import connect
 from .ingestion_service import save_matches, save_odds
-from .ingest import NormalizedMatch
 from .oddspapi_io import fetch_fixtures, fetch_market_catalog, fetch_odds
 from .providers import fetch_json
 
 SOCCER_SPORT_ID = 10
 DEFAULT_BOOKMAKER_CAP = 10
+INTERNAL_MATCH_BATCH = 20
 
 
 @dataclass(frozen=True)
@@ -60,9 +60,8 @@ async def discover_live_bookmakers(limit: int = DEFAULT_BOOKMAKER_CAP) -> tuple[
         key = _bookmaker_key(item)
         if key and _has_live_odds(item):
             candidates.append(key)
-    # Keep the first provider order stable and remove duplicates.
-    selected = list(dict.fromkeys(candidates))[:limit]
-    return selected, len(list(dict.fromkeys(candidates)))
+    unique = list(dict.fromkeys(candidates))
+    return unique[:limit], len(unique)
 
 
 def _set_live_status(external_ids: set[str]) -> None:
@@ -79,19 +78,18 @@ def _set_live_status(external_ids: set[str]) -> None:
 async def sync_global_live(
     *,
     hours: int = 1,
-    limit_matches: int = 20,
+    max_matches: int | None = None,
     bookmaker_cap: int = DEFAULT_BOOKMAKER_CAP,
 ) -> GlobalLiveSyncSummary:
-    """Refresh worldwide live football odds from live-enabled OddsPapi books.
+    """Refresh worldwide live football odds with internal batching.
 
-    This is deliberately bounded for a free/provider-limited account. It does
-    not assume Betano PE and does not place bets. The provider remains the
-    source of which bookmakers actually expose live odds.
+    ``max_matches`` is an internal safety control rather than a user-facing
+    product limit. The scanner processes additional batches when required.
     """
     if hours < 1 or hours > 2:
         raise ValueError("hours debe estar entre 1 y 2 para el radar LIVE mundial")
-    if limit_matches < 1 or limit_matches > 20:
-        raise ValueError("limit_matches debe estar entre 1 y 20")
+    if max_matches is not None and max_matches < 1:
+        raise ValueError("max_matches debe ser positivo")
     if bookmaker_cap < 1 or bookmaker_cap > 20:
         raise ValueError("bookmaker_cap debe estar entre 1 y 20")
 
@@ -103,22 +101,26 @@ async def sync_global_live(
         to_time=end.strftime("%Y-%m-%dT%H:%M:%SZ"),
         status_id=1,
     )
-    unique = {fixture.external_id: fixture for fixture in fixtures}
-    selected = list(unique.values())[:limit_matches]
+    unique = list(dict.fromkeys((fixture.external_id, fixture) for fixture in fixtures))
+    selected = [item[1] for item in unique]
+    if max_matches is not None:
+        selected = selected[:max_matches]
     seen, saved = save_matches(selected)
     _set_live_status({fixture.external_id for fixture in selected})
 
     catalog = await fetch_market_catalog()
     all_odds = []
-    for bookmaker in bookmakers:
-        for fixture in selected:
-            all_odds.extend(
-                await fetch_odds(
-                    fixture.external_id,
-                    bookmaker=bookmaker,
-                    market_catalog=catalog,
+    for start in range(0, len(selected), INTERNAL_MATCH_BATCH):
+        batch = selected[start:start + INTERNAL_MATCH_BATCH]
+        for bookmaker in bookmakers:
+            for fixture in batch:
+                all_odds.extend(
+                    await fetch_odds(
+                        fixture.external_id,
+                        bookmaker=bookmaker,
+                        market_catalog=catalog,
+                    )
                 )
-            )
     odds_seen, odds_saved = save_odds(all_odds)
     return GlobalLiveSyncSummary(
         bookmakers_discovered=discovered,
