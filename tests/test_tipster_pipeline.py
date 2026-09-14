@@ -29,8 +29,9 @@ def _seed(tmp_path):
     return db_path, match_id
 
 
-def test_enrichment_uses_best_fresh_original_and_safer_quote(tmp_path):
+def test_enrichment_uses_best_fresh_original_and_safer_quote(tmp_path, monkeypatch):
     db_path, match_id = _seed(tmp_path)
+    monkeypatch.setenv("DB_PATH", str(db_path))
     pick = TipsterPick(
         source="tipster-x",
         source_type="tipster",
