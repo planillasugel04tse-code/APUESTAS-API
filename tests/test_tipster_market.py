@@ -4,9 +4,10 @@ from betano_analyzer.db import connect, initialize
 from betano_analyzer.tipster_market import best_market_quote, best_market_quotes
 
 
-def test_best_market_quote_prefers_highest_fresh_quote(tmp_path):
+def test_best_market_quote_prefers_highest_fresh_quote(tmp_path, monkeypatch):
     db_path = tmp_path / "quotes.sqlite3"
     initialize(db_path)
+    monkeypatch.setenv("DB_PATH", str(db_path))
     captured = datetime.now(timezone.utc).isoformat()
     with connect(db_path) as db:
         db.execute("INSERT INTO matches(external_id,competition,home_team,away_team,kickoff,status) VALUES(?,?,?,?,?,?)", ("m1", "Liga 1", "A", "B", captured, "scheduled"))
@@ -21,9 +22,10 @@ def test_best_market_quote_prefers_highest_fresh_quote(tmp_path):
     assert quote["odds"] == 1.85
 
 
-def test_best_market_quotes_drops_stale_and_wrong_line(tmp_path):
+def test_best_market_quotes_drops_stale_and_wrong_line(tmp_path, monkeypatch):
     db_path = tmp_path / "quotes.sqlite3"
     initialize(db_path)
+    monkeypatch.setenv("DB_PATH", str(db_path))
     fresh = datetime.now(timezone.utc).isoformat()
     stale = (datetime.now(timezone.utc) - timedelta(hours=5)).isoformat()
     with connect(db_path) as db:
