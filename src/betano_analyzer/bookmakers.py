@@ -1,81 +1,80 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
+from .peru_bookmakers import PERU_BOOKMAKER_REGISTRY, registry_slugs
 from .providers import fetch_json
 
-# Priority list for the Peru market. The aggregator is the source of truth for
-# which of these are actually available to the configured API account.
-PERU_BOOKMAKERS = (
-    "Betano PE",
-    "Betano",
-    "Bet365",
-    "Betsson",
-    "Inkabet",
-    "Apuesta Total",
-    "Te Apuesto",
-    "DoradoBet",
-    "Betsafe",
-    "Retabet ES",
-    "1xbet",
-    "Stake",
-    "Meridianbet",
-    "Coolbet",
-    "Caliente",
-)
+# The Peru shortlist is intentionally driven by the legal/API registry instead
+# of a generic international bookmaker list.
+PERU_BOOKMAKERS = tuple(row["brand"] for row in PERU_BOOKMAKER_REGISTRY)
 
 
-def _names(payload: Any) -> list[str]:
+def _rows(payload: Any) -> list[dict[str, Any]]:
     if not isinstance(payload, list):
         return []
-    result: list[str] = []
+    result: list[dict[str, Any]] = []
     for item in payload:
-        if isinstance(item, dict) and item.get("name"):
-            result.append(str(item["name"]))
+        if not isinstance(item, dict):
+            continue
+        slug = item.get("slug")
+        name = item.get("bookmakerName") or item.get("name")
+        if slug or name:
+            result.append(
+                {
+                    "name": str(name or slug),
+                    "slug": str(slug or ""),
+                    "live_odds": item.get("liveOdds"),
+                    "clone_of": item.get("cloneOf"),
+                }
+            )
     return result
 
 
 async def available_bookmakers() -> list[dict[str, Any]]:
-    payload = await fetch_json("odds-api-io", "/v3/bookmakers")
-    if not isinstance(payload, list):
-        return []
-    return [
-        {"name": str(item.get("name")), "active": bool(item.get("active", True))}
-        for item in payload
-        if isinstance(item, dict) and item.get("name")
-    ]
+    payload = await fetch_json("oddspapi", "/v4/bookmakers")
+    return _rows(payload)
 
 
 async def selected_bookmakers() -> list[str]:
-    payload = await fetch_json("odds-api-io", "/v3/bookmakers/selected")
-    return _names(payload if isinstance(payload, list) else payload.get("bookmakers", []) if isinstance(payload, dict) else [])
+    configured = os.getenv("ODDSPAPI_BOOKMAKERS", "").strip()
+    if configured:
+        return [item.strip() for item in configured.split(",") if item.strip()]
+    return list(registry_slugs())
 
 
 async def peru_bookmakers() -> list[str]:
     available = await available_bookmakers()
-    active = {str(item["name"]) for item in available if item.get("active", True)}
-    # Exact names are required by Odds-API.io and are case-sensitive.
-    return [name for name in PERU_BOOKMAKERS if name in active]
+    active_slugs = {row["slug"] for row in available if row.get("slug")}
+    return [slug for slug in registry_slugs() if slug in active_slugs]
 
 
 async def peru_bookmaker_catalog() -> dict[str, Any]:
     available = await available_bookmakers()
-    active = {str(item["name"]) for item in available if item.get("active", True)}
+    by_slug = {row["slug"]: row for row in available if row.get("slug")}
     selected = set(await selected_bookmakers())
-    rows = []
-    for name in PERU_BOOKMAKERS:
+    rows: list[dict[str, Any]] = []
+
+    for legal in PERU_BOOKMAKER_REGISTRY:
+        slug = str(legal["oddspapi_slug"])
+        feed = by_slug.get(slug)
         rows.append(
             {
-                "name": name,
-                "available": name in active,
-                "selected_for_account": name in selected,
-                "active": name in active,
+                **legal,
+                "available_in_oddspapi": feed is not None,
+                "selected": slug in selected,
+                "live_odds": feed.get("live_odds") if feed else None,
+                "oddspapi_name": feed.get("name") if feed else None,
             }
         )
+
     return {
-        "provider": "odds-api-io",
+        "provider": "oddspapi",
         "market": "Peru",
+        "legal_source": "MINCETUR - Titulares de autorización de explotación",
         "priority_bookmakers": rows,
-        "available_peru_bookmakers": [name for name in PERU_BOOKMAKERS if name in active],
+        "available_peru_bookmakers": [row["oddspapi_slug"] for row in rows if row["available_in_oddspapi"]],
         "selected_bookmakers": sorted(selected),
+        "selection_rule": "Legal/authorized Peru registry first; OddsPapi availability second.",
     }
