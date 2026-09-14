@@ -6,7 +6,7 @@ from typing import Any
 
 from .db import connect
 from .ingestion_service import save_matches, save_odds
-from .oddspapi_io import fetch_json, fetch_fixtures, fetch_market_catalog, fetch_odds_multi_bookmaker
+from .oddspapi_io import fetch_bookmakers, fetch_fixtures, fetch_market_catalog, fetch_odds_multi_bookmaker
 from .peru_bookmakers import PERU_BOOKMAKER_REGISTRY, SUREBET_EXTRA_BOOKMAKERS
 
 SOCCER_SPORT_ID = 10
@@ -46,7 +46,7 @@ def _has_live_odds(item: dict[str, Any]) -> bool:
     return bool(value)
 
 async def discover_live_bookmakers(limit: int = DEFAULT_BOOKMAKER_CAP) -> tuple[list[str], int]:
-    rows = _items(await fetch_json("oddspapi", "/v4/bookmakers"))
+    rows = _items(await fetch_bookmakers())
     unique = list(dict.fromkeys(key for item in rows if (key := _bookmaker_key(item)) and _has_live_odds(item)))
     priority = [str(row["oddspapi_slug"]) for row in PERU_BOOKMAKER_REGISTRY] + [str(x) for x in SUREBET_EXTRA_BOOKMAKERS]
     ordered = [slug for slug in priority if slug in unique]
