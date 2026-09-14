@@ -45,6 +45,20 @@ def test_outside_odds_band_is_rejected():
     assert result.status == "REJECT_ODDS"
 
 
+def test_safer_quote_is_evaluated_and_selected_only_with_value():
+    result = analyze_pick(pick("A vs B", 1.70), evidence(), safer_odds=1.45)
+    assert result.safer.safer_selection == "1X"
+    assert result.safer.safer_edge is not None and result.safer.safer_edge >= 0.04
+    assert result.safer.selected is True
+
+
+def test_safer_quote_is_not_invented_or_selected_when_no_value():
+    result = analyze_pick(pick("A vs B", 1.70), evidence(), safer_odds=2.30)
+    assert result.safer.safer_odds == 2.30
+    assert result.safer.safer_edge is not None
+    assert result.safer.selected is False
+
+
 def test_best_combination_stays_at_two_or_three_legs_and_under_2_5():
     candidates = [
         analyze_pick(pick("A vs B", 1.55), evidence()),
