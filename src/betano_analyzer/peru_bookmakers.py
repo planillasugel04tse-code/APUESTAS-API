@@ -2,11 +2,15 @@ from __future__ import annotations
 
 from typing import Any
 
-# Peru-focused candidate bookmakers. OddsPapi availability is checked dynamically.
+# Only bookmakers whose Peru authorization is explicitly verified are included
+# in the execution registry. Candidates stay separate until verified.
 PERU_BOOKMAKER_REGISTRY: tuple[dict[str, Any], ...] = (
     {"brand": "Betano", "domain": "betano.pe", "oddspapi_slug": "betano.pe", "legal_status": "verified_register_2026-09"},
     {"brand": "Apuesta Total", "domain": "apuestatotal.com", "oddspapi_slug": "apuestatotal", "legal_status": "verified_register_2026-09"},
     {"brand": "Inkabet", "domain": "inkabet.pe", "oddspapi_slug": "inkabet", "legal_status": "verified_register_2026-09"},
+)
+
+PERU_BOOKMAKER_CANDIDATES: tuple[dict[str, Any], ...] = (
     {"brand": "Bet365", "domain": "bet365.com", "oddspapi_slug": "bet365", "legal_status": "candidate"},
     {"brand": "Betsson", "domain": "betsson.com", "oddspapi_slug": "betsson", "legal_status": "candidate"},
     {"brand": "Betcris", "domain": "betcris.com", "oddspapi_slug": "betcris", "legal_status": "candidate"},
