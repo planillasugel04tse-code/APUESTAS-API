@@ -5,6 +5,8 @@ from typing import Any
 
 from .providers import fetch_json
 
+_ODDSPAPI_BASE = "https://api.oddspapi.io"
+
 
 def _text(value: Any) -> str:
     return str(value).strip() if value is not None else ""
@@ -47,7 +49,7 @@ async def scan_oddspapi_catalog(*, deep: bool = False, max_requests: int = 40) -
             raise StopAsyncIteration
         requests_used += 1
         import httpx
-        url = "https://api.oddspapi.com/v4/" + path.lstrip("/")
+        url = _ODDSPAPI_BASE + "/v4/" + path.lstrip("/")
         query = dict(params or {})
         query["apiKey"] = key
         async with httpx.AsyncClient(timeout=20, trust_env=False) as client:
@@ -56,7 +58,7 @@ async def scan_oddspapi_catalog(*, deep: bool = False, max_requests: int = 40) -
             return response.json()
 
     import httpx
-    account_url = "https://api.oddspapi.com/v4/account"
+    account_url = _ODDSPAPI_BASE + "/v4/account"
     async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
         account_response = await client.get(account_url, params={"apiKey": key}, headers={"Accept": "application/json"})
         account_response.raise_for_status()

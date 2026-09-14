@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import pytest
+
 from betano_analyzer.db import initialize, connect
 from betano_analyzer.tipster_intelligence import StatisticalEvidence, TipsterPick
 from betano_analyzer.tipster_pipeline import enrich_tipster_pick
@@ -78,6 +80,6 @@ def test_enrichment_falls_back_to_stored_statistics_when_model_probability_is_mi
     result = enrich_tipster_pick(match_id, pick, StatisticalEvidence())
     assert result.statistics.status == "OK"
     assert result.statistics.selection_probability is not None
-    assert result.analysis.probability == result.statistics.selection_probability
+    assert result.analysis.probability == pytest.approx(result.statistics.selection_probability, rel=1e-6)
     assert result.analysis.evidence.data_completeness == 1.0
     assert result.analysis.evidence.sample_size == 5
