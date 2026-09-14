@@ -17,6 +17,7 @@ from .tipster_intelligence import (
     serialize,
 )
 from .tipster_market import best_market_quotes
+from .tipster_pipeline import enrich_tipster_pick, serialize_enriched
 from .tipster_sources import collect_public_tipsters
 
 router = APIRouter(prefix="/api/v1/tipsters", tags=["tipsters"])
@@ -35,11 +36,17 @@ class TipsterAnalyzeRequest(BaseModel):
     sport: str = ""
     league: str = ""
     model_probability: float | None = Field(default=None, ge=0, le=1)
+    market_probability: float | None = Field(default=None, ge=0, le=1)
     recent_form_score: float | None = Field(default=None, ge=0, le=1)
     referee_score: float | None = Field(default=None, ge=0, le=1)
     agreement_score: float | None = Field(default=None, ge=0, le=1)
     data_completeness: float = Field(default=0, ge=0, le=1)
     sample_size: int = Field(default=0, ge=0)
+
+
+class TipsterEnrichRequest(TipsterAnalyzeRequest):
+    match_id: int = Field(gt=0)
+    max_age_minutes: int = Field(default=180, ge=1, le=1440)
 
 
 class TextPredictionRequest(BaseModel):
@@ -48,8 +55,8 @@ class TextPredictionRequest(BaseModel):
     text: str
 
 
-def _analysis(payload: TipsterAnalyzeRequest) -> AnalyzedPick:
-    pick = TipsterPick(
+def _pick(payload: TipsterAnalyzeRequest) -> TipsterPick:
+    return TipsterPick(
         source=payload.source,
         source_type=payload.source_type,
         event=payload.event,
@@ -60,20 +67,39 @@ def _analysis(payload: TipsterAnalyzeRequest) -> AnalyzedPick:
         sport=payload.sport,
         league=payload.league,
     )
-    evidence = StatisticalEvidence(
+
+
+def _evidence(payload: TipsterAnalyzeRequest) -> StatisticalEvidence:
+    return StatisticalEvidence(
         sample_size=payload.sample_size,
         model_probability=payload.model_probability,
+        market_probability=payload.market_probability,
         recent_form_score=payload.recent_form_score,
         referee_score=payload.referee_score,
         agreement_score=payload.agreement_score,
         data_completeness=payload.data_completeness,
     )
-    return analyze_pick(pick, evidence, safer_odds=payload.safer_odds)
+
+
+def _analysis(payload: TipsterAnalyzeRequest) -> AnalyzedPick:
+    return analyze_pick(_pick(payload), _evidence(payload), safer_odds=payload.safer_odds)
 
 
 @router.post("/analyze")
 def analyze(payload: TipsterAnalyzeRequest) -> dict[str, Any]:
     return serialize(_analysis(payload))
+
+
+@router.post("/enrich")
+def enrich(payload: TipsterEnrichRequest) -> dict[str, Any]:
+    """Run the integrated tipster -> market -> value pipeline using stored odds."""
+    result = enrich_tipster_pick(
+        payload.match_id,
+        _pick(payload),
+        _evidence(payload),
+        max_age_minutes=payload.max_age_minutes,
+    )
+    return serialize_enriched(result)
 
 
 @router.get("/market-quotes")
