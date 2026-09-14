@@ -95,16 +95,115 @@ def activate_account(account_id: str) -> dict[str, Any]:
     return _public(selected)
 
 
+def _number(value: Any) -> int | float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return value
+    if isinstance(value, str):
+        raw = value.strip().replace(",", "")
+        try:
+            return float(raw) if "." in raw else int(raw)
+        except ValueError:
+            return None
+    return None
+
+
+def _find_pair(payload: Any, used_keys: set[str], limit_keys: set[str]) -> tuple[int | float | None, int | float | None]:
+    """Find used/limit values anywhere in a nested OddsPapi account payload."""
+    if isinstance(payload, dict):
+        used = None
+        limit = None
+        for key, value in payload.items():
+            normalized = str(key).lower().replace("-", "_")
+            if normalized in used_keys or normalized.endswith("_used") or normalized.endswith("_usage"):
+                used = _number(value)
+            if normalized in limit_keys or normalized.endswith("_limit") or normalized.endswith("_quota"):
+                limit = _number(value)
+        if used is not None or limit is not None:
+            return used, limit
+        for value in payload.values():
+            found_used, found_limit = _find_pair(value, used_keys, limit_keys)
+            if found_used is not None or found_limit is not None:
+                return found_used, found_limit
+    elif isinstance(payload, list):
+        for value in payload:
+            found_used, found_limit = _find_pair(value, used_keys, limit_keys)
+            if found_used is not None or found_limit is not None:
+                return found_used, found_limit
+    return None, None
+
+
+def _extract_account_metrics(account: Any, headers: httpx.Headers) -> dict[str, Any]:
+    used, limit = _find_pair(
+        account,
+        {"used", "usage", "requests_used", "request_used", "calls_used", "api_calls_used", "consumed"},
+        {"limit", "requests_limit", "request_limit", "calls_limit", "api_calls_limit", "quota", "max_requests"},
+    )
+    if used is None:
+        for key in ("x-ratelimit-used", "x-rate-limit-used", "x-ratelimit-usage"):
+            if key in headers:
+                used = _number(headers.get(key))
+                break
+    if limit is None:
+        for key in ("x-ratelimit-limit", "x-rate-limit-limit", "x-ratelimit-quota"):
+            if key in headers:
+                limit = _number(headers.get(key))
+                break
+
+    remaining = max(0, limit - used) if used is not None and limit is not None else None
+
+    def first(keys: tuple[str, ...]) -> Any:
+        if not isinstance(account, dict):
+            return None
+        for key in keys:
+            if key in account and account[key] not in (None, ""):
+                return account[key]
+        return None
+
+    plan = first(("plan", "planName", "subscriptionPlan", "tier"))
+    subscription = first(("subscription", "subscriptionStatus", "status"))
+    valid_from = first(("validFrom", "valid_from", "startDate", "startsAt"))
+    valid_until = first(("validUntil", "valid_until", "endDate", "expiresAt", "expirationDate"))
+    last_used = first(("lastUsed", "last_use", "lastApiUse", "lastRequestAt", "lastUsedAt"))
+
+    return {
+        "used": used,
+        "limit": limit,
+        "remaining": remaining,
+        "display": f"{used:g} / {limit:g}" if used is not None and limit is not None else None,
+        "plan": plan,
+        "subscription_status": subscription,
+        "valid_from": valid_from,
+        "valid_until": valid_until,
+        "last_api_use": last_used,
+        "source": "OddsPapi account endpoint / rate-limit headers",
+    }
+
+
 async def check_oddspapi(api_key: str) -> dict[str, Any]:
     key = api_key.strip()
     if not key:
         raise ValueError("La API Key es obligatoria")
-    # OddsPapi current v4 API host.
     url = "https://api.oddspapi.io/v4/account"
     async with httpx.AsyncClient(timeout=15.0, trust_env=False) as client:
         response = await client.get(url, params={"apiKey": key}, headers={"Accept": "application/json"})
         response.raise_for_status()
         payload = response.json()
-    if not isinstance(payload, dict):
-        return {"valid": True, "account": payload}
-    return {"valid": True, "account": payload, "quota_call": "no debería consumir solicitudes de cuotas"}
+        metrics = _extract_account_metrics(payload, response.headers)
+
+    return {
+        "valid": True,
+        "account": payload,
+        "usage": metrics,
+        "requests_used": metrics["used"],
+        "request_limit": metrics["limit"],
+        "quota_remaining": metrics["remaining"],
+        "usage_display": metrics["display"],
+        "plan": metrics["plan"],
+        "subscription_status": metrics["subscription_status"],
+        "valid_from": metrics["valid_from"],
+        "valid_until": metrics["valid_until"],
+        "last_api_use": metrics["last_api_use"],
+        "quota_call": "no debería consumir solicitudes de cuotas",
+    }
