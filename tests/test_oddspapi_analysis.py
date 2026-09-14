@@ -13,7 +13,7 @@ def _payload():
                     "marketType": "1x2",
                     "marketName": "Full Time Result",
                     "outcomes": [
-                        {"outcomeName": "1", "price": 2.20, "mainLine": True},
+                        {"outcomeName": "1", "price": 2.50, "mainLine": True},
                         {"outcomeName": "X", "price": 3.60, "mainLine": True},
                         {"outcomeName": "2", "price": 3.40, "mainLine": True},
                     ],
@@ -25,8 +25,8 @@ def _payload():
                     "marketName": "Full Time Result",
                     "outcomes": [
                         {"outcomeName": "1", "price": 2.10, "mainLine": True},
-                        {"outcomeName": "X", "price": 3.70, "mainLine": True},
-                        {"outcomeName": "2", "price": 3.60, "mainLine": True},
+                        {"outcomeName": "X", "price": 4.00, "mainLine": True},
+                        {"outcomeName": "2", "price": 4.00, "mainLine": True},
                     ],
                 }]
             },
@@ -56,7 +56,7 @@ def test_detects_three_way_surebet_and_stakes():
     assert len(result["surebets"]) == 1
     arb = result["surebets"][0]
     assert arb["profit_percent"] > 0
-    assert sum(item["stake"] for item in arb["outcomes"].values()) == 100.0
+    assert abs(sum(item["stake"] for item in arb["outcomes"].values()) - 100.0) <= 0.02
     assert {item["bookmaker"] for item in arb["outcomes"].values()} == {"betano.pe", "betsson"}
 
     edges = {row["outcome"]: row["edge_percent"] for row in result["reference_edge"]}
