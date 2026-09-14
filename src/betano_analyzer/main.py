@@ -19,13 +19,14 @@ from .provider_accounts_panel import provider_accounts_page
 from .range_strategy_api import router as range_strategy_router
 from .telegram_api import router as telegram_router
 from .telegram_test_web import telegram_test_page
+from .tipster_api import router as tipster_router
+from .tipster_panel import tipster_panel_page
 from .web_surebet_patch import dashboard_response
 from .branding import apply_product_branding
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize the database on startup."""
     initialize()
     yield
 
@@ -33,7 +34,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="ANALISYS BETSTOTAL",
     version="0.1.0",
-    description="Plataforma de análisis de cuotas, value bets, surebets y señales deportivas.",
+    description="Plataforma de análisis de cuotas, value bets, surebets, tipsters y señales deportivas.",
     lifespan=lifespan,
 )
 
@@ -64,6 +65,7 @@ app.include_router(oddspapi_scan_router)
 app.include_router(provider_accounts_router)
 app.include_router(range_strategy_router)
 app.include_router(telegram_router)
+app.include_router(tipster_router)
 
 
 @app.get("/health")
@@ -94,3 +96,8 @@ def provider_accounts():
 @app.get("/telegram-test", include_in_schema=False)
 def telegram_test():
     return telegram_test_page()
+
+
+@app.get("/tipsters", include_in_schema=False)
+def tipsters_panel():
+    return tipster_panel_page()
