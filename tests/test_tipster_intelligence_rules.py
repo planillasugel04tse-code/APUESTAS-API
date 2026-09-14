@@ -52,9 +52,9 @@ def test_safer_quote_is_evaluated_and_selected_only_with_value():
     assert result.safer.selected is True
 
 
-def test_safer_quote_is_not_invented_or_selected_when_no_value():
-    result = analyze_pick(pick("A vs B", 1.70), evidence(), safer_odds=2.30)
-    assert result.safer.safer_odds == 2.30
+def test_safer_quote_is_not_selected_when_no_value():
+    result = analyze_pick(pick("A vs B", 1.70), evidence(), safer_odds=1.40)
+    assert result.safer.safer_odds == 1.40
     assert result.safer.safer_edge is not None
     assert result.safer.selected is False
 
