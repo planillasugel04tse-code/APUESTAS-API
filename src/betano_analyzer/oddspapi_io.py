@@ -218,7 +218,7 @@ async def fetch_bookmakers(*, force: bool = False) -> list[dict[str, Any]]:
 
 
 async def fetch_odds_multi_bookmaker(fixture_id: str, bookmakers: list[str], *, market_catalog: list[dict[str, Any]] | None = None, cache_ttl: float = _ODDS_CACHE_TTL_SECONDS) -> dict[str, list[NormalizedOdd]]:
-    normalized = tuple(dict.fromkeys(str(x).strip() for x in bookmakers if str(x).strip()))
+    normalized = tuple(sorted(dict.fromkeys(str(x).strip() for x in bookmakers if str(x).strip())))
     if not normalized: return {}
     key = (str(fixture_id), normalized)
     now = datetime.now(timezone.utc)
