@@ -18,15 +18,24 @@ _NEW_JS = '''const $=id=>document.getElementById(id),surebetBox=$('surebet'),sur
 # on one exact historical string. This keeps the patch working as the dashboard
 # gains unrelated scripts above or below the surebet functions.
 _SUREBET_JS_RE = re.compile(r"function renderSurebet\(.*?async function loadFinal\(", re.S)
+_SUREBET_PRE_BUTTON_RE = re.compile(r'<button([^>]*?)onclick=["\']loadSurebetPre\(\)["\']([^>]*)>')
+_SUREBET_LIVE_BUTTON_RE = re.compile(r'<button([^>]*?)onclick=["\']loadSurebetLive\(\)["\']([^>]*)>')
 
 
 def dashboard_response(today: date) -> HTMLResponse:
     html = dashboard_html(today)
     html = html.replace(_OLD_CARD, _NEW_CARD)
     html = _SUREBET_JS_RE.sub(_NEW_JS + "async function loadFinal(", html, count=1)
-    # Fallback for future dashboard changes where the exact card is no longer
-    # present but the original buttons remain discoverable.
-    html = html.replace('<button onclick="loadSurebetPre()">', '<button id="surebet-pre-button" onclick="loadSurebetPre()">', 1)
-    html = html.replace('<button class="live-button" onclick="loadSurebetLive()">', '<button id="surebet-live-button" class="live-button" onclick="loadSurebetLive()">', 1)
+    # Make the controls addressable even if the base dashboard changes quote
+    # style or attributes around the original onclick handlers.
+    if 'id="surebet-pre-button"' not in html:
+        html = _SUREBET_PRE_BUTTON_RE.sub(r'<button\1 id="surebet-pre-button"\2>', html, count=1)
+    if 'id="surebet-live-button"' not in html:
+        html = _SUREBET_LIVE_BUTTON_RE.sub(r'<button\1 id="surebet-live-button"\2>', html, count=1)
+    # If a future base template removes the buttons entirely, keep a safe
+    # fallback control block before the surebet result container.
+    if 'id="surebet-pre-button"' not in html and 'id="surebet"' in html:
+        fallback = '<div class="surebet-buttons"><button id="surebet-pre-button" onclick="loadSurebetPre()">📅 SUREBET PRE-PARTIDO</button><button id="surebet-live-button" class="live-button" onclick="loadSurebetLive()">🔴 SUREBET LIVE · BUSCAR AHORA</button></div>'
+        html = html.replace('<div id="surebet"', fallback + '<div id="surebet"', 1)
     html = html.replace('.profit{font-weight:800}', '.profit{font-weight:800}.metric{background:#f4f6fa;border-radius:10px;padding:10px}.metric b{font-size:20px;display:block;margin-top:4px}.surebet-scope{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.surebet-scope button.active{font-weight:800;border:2px solid currentColor}.surebet-filters{margin:10px 0}.surebet-filters select{padding:8px;border-radius:8px}.surebet-league{margin-top:18px}')
     return HTMLResponse(html)
