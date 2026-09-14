@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
@@ -29,6 +30,7 @@ class TipsterAnalyzeRequest(BaseModel):
     market: str
     selection: str
     odds: float | None = Field(default=None, gt=1)
+    safer_odds: float | None = Field(default=None, gt=1)
     line: float | None = None
     sport: str = ""
     league: str = ""
@@ -66,7 +68,7 @@ def _analysis(payload: TipsterAnalyzeRequest) -> AnalyzedPick:
         agreement_score=payload.agreement_score,
         data_completeness=payload.data_completeness,
     )
-    return analyze_pick(pick, evidence)
+    return analyze_pick(pick, evidence, safer_odds=payload.safer_odds)
 
 
 @router.post("/analyze")
@@ -116,14 +118,16 @@ async def betmains_photo(
     if len(data) > 10 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="La imagen supera 10 MB")
     BETMAINS_DIR.mkdir(parents=True, exist_ok=True)
-    safe_name = Path(image.filename or "jugada.jpg").name.replace(" ", "_")
+    suffix = Path(image.filename or "jugada.jpg").suffix.lower() or ".jpg"
+    safe_name = f"{uuid4().hex}{suffix}"
     destination = BETMAINS_DIR / safe_name
     destination.write_bytes(data)
     return {
         "status": "RECEIVED",
         "source": "Betmains",
         "filename": safe_name,
+        "original_filename": Path(image.filename or "jugada.jpg").name,
         "bytes": len(data),
         "note": note,
-        "next_step": "La jugada queda en cola de extracción; si el OCR no reconoce el texto, el formulario permite registrar la jugada manualmente.",
+        "next_step": "La imagen queda en cola de extracción; si el OCR no está disponible o no reconoce el texto, el formulario permite registrar la jugada manualmente.",
     }
