@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from .db import connect
@@ -38,6 +38,7 @@ class Arbitrage:
     mode: str
     competition: str = ""
     scope: str = "world"
+    bookmaker_mix: str = ""
 
 
 def _live_stale_minutes() -> int:
@@ -120,20 +121,28 @@ def _is_international_bookmaker(bookmaker: object) -> bool:
     return not _is_peru_bookmaker(bookmaker)
 
 
-def _valid_world_bookmaker_mix(selected: dict[str, tuple[str, float]]) -> bool:
-    """World Surebet policy: never Peru-vs-Peru only.
-
-    Accept either:
-      * at least one Peru bookmaker + at least one international bookmaker; or
-      * an arbitrage formed entirely by international bookmakers.
-
-    This deliberately excludes a Surebet whose participating bookmakers are
-    all Peru-only, while keeping Pinnacle and other international feeds in play.
-    """
+def _world_bookmaker_mix(selected: dict[str, tuple[str, float]]) -> str:
     bookmakers = [value[0] for value in selected.values()]
     has_peru = any(_is_peru_bookmaker(name) for name in bookmakers)
     has_international = any(_is_international_bookmaker(name) for name in bookmakers)
-    return has_international and (has_peru or all(_is_international_bookmaker(name) for name in bookmakers))
+    if has_peru and has_international:
+        return "PERU + INTERNATIONAL"
+    if has_international and all(_is_international_bookmaker(name) for name in bookmakers):
+        return "INTERNATIONAL + INTERNATIONAL"
+    return "PERU + PERU"
+
+
+def _valid_world_bookmaker_mix(selected: dict[str, tuple[str, float]]) -> bool:
+    """World Surebet policy: never allow Peru-only combinations.
+
+    Accepted:
+      * Peru + at least one international bookmaker.
+      * International + international bookmakers.
+
+    Rejected:
+      * Peru + Peru only.
+    """
+    return _world_bookmaker_mix(selected) != "PERU + PERU"
 
 
 def _is_peru_competition(competition: object) -> bool:
@@ -166,7 +175,7 @@ def find_arbitrage(
     scope: str = "all",
     league: str | None = None,
 ) -> list[Arbitrage]:
-    """Find stored-odds arbitrage, with explicit Peru/international mix rules."""
+    """Find stored-odds arbitrage with explicit Peru/world bookmaker rules."""
     normalized_scope = str(scope or "all").strip().lower()
     if normalized_scope not in {"all", "peru", "world"}:
         raise ValueError("scope must be one of: all, peru, world")
@@ -240,12 +249,7 @@ def find_arbitrage(
             continue
 
         selected = {key: best[key] for key in required}
-
-        # WORLD Surebet: Peru-only arbitrages are excluded. We deliberately
-        # keep both desired expansion modes: Peru + international, and
-        # international + international. The same rule applies to 2-way and
-        # 3-way markets because the participating bookmaker set is evaluated
-        # across every selected outcome.
+        mix = _world_bookmaker_mix(selected)
         if normalized_scope == "world" and not _valid_world_bookmaker_mix(selected):
             continue
 
@@ -264,6 +268,7 @@ def find_arbitrage(
                     mode="live" if live else "pre_match",
                     competition=competition,
                     scope=_scope_for_competition(competition),
+                    bookmaker_mix=mix,
                 )
             )
             if len(result) >= limit:
