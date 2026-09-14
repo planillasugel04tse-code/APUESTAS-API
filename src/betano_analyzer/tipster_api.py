@@ -53,6 +53,8 @@ class TextPredictionRequest(BaseModel):
     source: str
     source_type: str = "ai"
     text: str
+    match_id: int | None = Field(default=None, gt=0)
+    max_age_minutes: int = Field(default=180, ge=1, le=1440)
 
 
 def _pick(payload: TipsterAnalyzeRequest) -> TipsterPick:
@@ -92,7 +94,7 @@ def analyze(payload: TipsterAnalyzeRequest) -> dict[str, Any]:
 
 @router.post("/enrich")
 def enrich(payload: TipsterEnrichRequest) -> dict[str, Any]:
-    """Run the integrated tipster -> market -> value pipeline using stored odds."""
+    """Run the integrated tipster -> market -> statistics -> value pipeline using stored data."""
     result = enrich_tipster_pick(
         payload.match_id,
         _pick(payload),
@@ -151,9 +153,19 @@ def market_quotes(
 
 @router.post("/ai")
 def analyze_ai_prediction(payload: TextPredictionRequest) -> dict[str, Any]:
+    """Normalize an AI text prediction; enrich it with stored data when match_id is supplied."""
     pick = parse_basic_tipster_text(payload.text, payload.source, payload.source_type)
     if not pick:
         raise HTTPException(status_code=400, detail="No se pudo interpretar el pronóstico de IA")
+    if payload.match_id is not None:
+        return serialize_enriched(
+            enrich_tipster_pick(
+                payload.match_id,
+                pick,
+                StatisticalEvidence(),
+                max_age_minutes=payload.max_age_minutes,
+            )
+        )
     result = analyze_pick(pick, StatisticalEvidence(data_completeness=0.0))
     return serialize(result)
 
