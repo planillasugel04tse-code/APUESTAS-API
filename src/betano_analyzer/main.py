@@ -13,6 +13,7 @@ from .db import initialize
 from .health_api import router as health_router
 from .model_api import router as model_router
 from .oddspapi_api import router as oddspapi_router
+from .oddspapi_analysis_api import router as oddspapi_analysis_router
 from .oddspapi_odds_api import router as oddspapi_odds_router
 from .oddspapi_scan_api import router as oddspapi_scan_router
 from .provider_accounts_api import router as provider_accounts_router
@@ -62,6 +63,7 @@ app.include_router(bookmakers_router)
 app.include_router(health_router)
 app.include_router(model_router)
 app.include_router(oddspapi_router)
+app.include_router(oddspapi_analysis_router)
 app.include_router(oddspapi_odds_router)
 app.include_router(oddspapi_scan_router)
 app.include_router(provider_accounts_router)
