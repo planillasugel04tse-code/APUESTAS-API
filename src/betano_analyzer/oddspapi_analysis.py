@@ -47,8 +47,10 @@ def _iter_bookmaker_markets(bookmaker: dict[str, Any]):
         if isinstance(market, dict): yield market
 
 def extract_quotes(payload: dict[str, Any]) -> tuple[list[Quote], dict[str, Any]]:
-    quotes: list[Quote] = []; bookmakers = payload.get("bookmakerOdds") or payload.get("bookmakers") or []
-    if isinstance(bookmakers, dict): bookmakers = [bookmakers]
+    quotes: list[Quote] = []
+    bookmakers = payload.get("bookmakerOdds") or payload.get("bookmakers") or []
+    if isinstance(bookmakers, dict):
+        bookmakers = [{**value, "bookmakerName": value.get("bookmakerName") or value.get("name") or key} if isinstance(value, dict) else {"bookmakerName": key} for key, value in bookmakers.items()]
     for bookmaker in bookmakers:
         if not isinstance(bookmaker, dict): continue
         name = str(bookmaker.get("bookmakerName") or bookmaker.get("name") or bookmaker.get("slug") or "").strip()
