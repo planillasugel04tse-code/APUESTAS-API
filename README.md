@@ -2,113 +2,99 @@
 
 Plataforma de análisis deportivo orientada a cuotas, value bets, surebets/arbitraje, señales de Telegram, backtesting y seguimiento de resultados.
 
-## Entorno de prueba
+## Estado de implementación
 
-El repositorio incluye un entorno reproducible para probar la aplicación sin modificar tu instalación principal:
+- **Dashboard y panel web**: disponibles.
+- **OddsPapi**: conexión configurable, comprobación de cuenta y scanner de capacidades/datos.
+- **Surebet**: Perú / Mundial / Todo, Pre-match / Live, separación por liga y verificación.
+- **LIVE Mundial**: descubre automáticamente bookmakers que exponen live odds y procesa fixtures en lotes internos; el límite técnico no se presenta como límite de producto.
+- **Range Strategy / Gap Detection**: disponible para goals y corners.
+- **Telegram**: parser, matching, almacenamiento, backtest y listener Telethon separado.
+- **CI**: pruebas automáticas con Python 3.13.
+- **Docker/Render**: archivos de despliegue preparados; la activación del hosting sigue requiriendo autorización en la plataforma externa.
 
-### Opción 1 — GitHub Codespaces
+## Prueba rápida
 
-El proyecto incluye `.devcontainer/devcontainer.json`. Al abrir un Codespace sobre `main`, el entorno instala Python 3.13 y las dependencias, inicia automáticamente el servidor y reenvía el puerto 8000 al navegador.
+### GitHub Codespaces
 
-### Opción 2 — Docker en Windows
+El proyecto incluye `.devcontainer/devcontainer.json`. Abre un Codespace sobre `main`; el entorno instala Python 3.13, dependencias y expone el puerto 8000.
+
+### Docker
 
 ```bash
 copy .env.example .env
 docker compose up --build
 ```
 
-Después abre `http://localhost:8000/panel`.
+Panel: `/panel`  
+API: `/docs`  
+Salud: `/health`
 
-### Opción 3 — Python local
+## Telegram
+
+El listener se ejecuta separado del servidor web:
 
 ```bash
-python -m venv .venv
-.venv\\Scripts\\activate
-pip install -e ".[dev]"
-python -m uvicorn --app-dir src betano_analyzer.main:app --reload
+betstotal-telegram
 ```
 
-Panel: `http://127.0.0.1:8000/panel`  
-API: `http://127.0.0.1:8000/docs`  
-Salud: `http://127.0.0.1:8000/health`
+Variables requeridas para activarlo:
 
-## Estado
+- `TELEGRAM_ENABLED=true`
+- `TELEGRAM_API_ID`
+- `TELEGRAM_API_HASH`
+- `TELEGRAM_PHONE` (opcional si Telethon ya tiene sesión válida)
+- `TELEGRAM_SESSION_NAME`
+- `TELEGRAM_CHANNELS` (usuarios/IDs separados por comas o `*`)
 
-- Producto: **ANALISYS BETSTOTAL**
-- API: FastAPI
-- Python: >= 3.13
-- Base de datos: SQLite para desarrollo y pruebas
-- Proveedores: integración preparada para OddsPapi y otros proveedores configurados
-- Telegram: listener separado mediante Telethon
-- Web: panel visual en `/panel`
-- Gestión de proveedores: `/provider-accounts`
-- Gestión de bookmakers: `/bookmakers`
-- Documentación API: `/docs`
-- Salud: `/health` y `/api/v1/health`
+El listener **solo lee mensajes y los entrega al pipeline de análisis**. No coloca apuestas ni modifica Telegram.
+
+## OddsPapi
+
+Variables:
+
+- `ODDSPAPI_KEY`
+- `ODDS_API_KEY` (proveedor opcional)
+
+El scanner consulta las capacidades reales de la cuenta antes de intentar explorar deportes, torneos, fixtures, bookmakers y mercados. Las cuotas Live dependen de que el bookmaker y el mercado estén realmente expuestos por la cuenta del proveedor.
+
+## Surebet
+
+La interfaz separa:
+
+```text
+SUREBET
+├── PERÚ
+├── MUNDIAL
+└── TODO
+    ├── PRE-MATCH
+    └── LIVE
+        └── LIGA → OPORTUNIDAD → VERIFICAR
+```
+
+Las oportunidades se calculan únicamente con cuotas almacenadas/actualizadas por el proveedor. Una oportunidad Live debe volver a verificarse antes de considerarse confirmada.
+
+## Range Strategy
+
+Endpoint:
+
+```text
+GET /api/v1/range-strategy
+```
+
+Analiza huecos entre líneas de goals/corners y estima la probabilidad de que el resultado quede dentro del intervalo. Es análisis estadístico; no coloca apuestas.
+
+## Telegram API
+
+- `POST /api/v1/telegram/signals` — procesa una señal.
+- `GET /api/v1/telegram/signals` — consulta señales almacenadas.
+- `GET /api/v1/telegram/config` — estado seguro de configuración.
+- `POST /api/v1/telegram/retry-pending` — reintenta matching de partidos aún no encontrados.
+- `GET /api/v1/telegram/backtest` — backtest de picks Telegram liquidados.
 
 ## Variables sensibles
 
-Las claves y sesiones deben mantenerse fuera de Git. Usa `.env`/variables de entorno para credenciales de proveedores y Telegram.
-
-Variables principales:
-
-- `ODDSPAPI_KEY`
-- `ODDS_API_KEY`
-- `TELEGRAM_API_ID`
-- `TELEGRAM_API_HASH`
-- `TELEGRAM_PHONE`
-- `TELEGRAM_SESSION_NAME`
-- `TELEGRAM_CHANNELS`
-- `TELEGRAM_ENABLED`
-- `DB_PATH`
-
-Para la prueba inicial, Telegram y los proveedores externos permanecen desactivados hasta introducir credenciales válidas.
-
-## Arquitectura
-
-```text
-src/betano_analyzer/
-├── main.py
-├── api.py
-├── db.py
-├── bookmakers.py
-├── bookmakers_api.py
-├── provider_accounts.py
-├── provider_accounts_api.py
-├── oddspapi_scanner.py
-├── oddspapi_scan_api.py
-├── arbitrage.py
-├── arbitrage_api.py
-├── value_engine.py
-├── radar.py
-├── radar_value.py
-├── master_radar.py
-├── final_selector.py
-├── conservative_engine.py
-└── telegram/
-```
-
-## Funciones principales
-
-### Analyzer
-
-Calcula probabilidades implícitas, margen de mercado, probabilidades normalizadas y señales de valor a partir de las cuotas y estimaciones disponibles.
-
-### Surebet / Arbitraje
-
-Analiza oportunidades de arbitraje con las cuotas realmente disponibles. No inventa casas ni cuotas que no estén presentes en los datos.
-
-### Perú
-
-El modo Perú identifica las casas que el proveedor configurado realmente expone para la cuenta y separa disponibilidad del proveedor de la posibilidad real de operar con una casa.
-
-### OddsPapi
-
-El scanner consulta primero la cuenta y sus capacidades y puede explorar deportes, torneos, fixtures, bookmakers y mercados dentro del presupuesto de solicitudes configurado.
-
-### Telegram
-
-La integración está diseñada para ejecutarse como proceso separado del servidor web, evitando iniciar automáticamente una sesión de Telegram en un despliegue web.
+No subas `.env`, sesiones de Telegram ni claves reales al repositorio. `.env.example` contiene únicamente nombres y valores de ejemplo.
 
 ## Tests
 
@@ -116,8 +102,12 @@ La integración está diseñada para ejecutarse como proceso separado del servid
 python -m pytest -q
 ```
 
-El objetivo del repositorio es mantener un ciclo cerrado: **código → tests → CI → corrección → nueva validación**.
+El ciclo de calidad es:
 
-## Despliegue web
+**código → tests → CI → corrección → nueva validación**.
 
-El repositorio contiene `Dockerfile` y `render.yaml` preparados para un servicio web. La creación de la cuenta/servicio externo y la autorización de despliegue son pasos de la plataforma de hosting; GitHub por sí solo no crea una URL pública persistente.
+## Despliegue
+
+`Dockerfile` y `render.yaml` están preparados para un servicio web. GitHub mantiene el código; la URL pública persistente depende de activar un proveedor de hosting y configurar sus variables/secretos.
+
+La base SQLite es apropiada para desarrollo/pruebas. Para producción con alta concurrencia o persistencia garantizada debe sustituirse por una base de datos gestionada.
