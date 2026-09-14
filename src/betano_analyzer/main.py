@@ -19,6 +19,7 @@ from .oddspapi_scan_api import router as oddspapi_scan_router
 from .provider_accounts_api import router as provider_accounts_router
 from .provider_accounts_panel import provider_accounts_page
 from .range_strategy_api import router as range_strategy_router
+from .statistical_api import router as statistical_router
 from .telegram_api import router as telegram_router
 from .telegram_test_web import telegram_test_page
 from .tipster_api import router as tipster_router
@@ -68,6 +69,7 @@ app.include_router(oddspapi_odds_router)
 app.include_router(oddspapi_scan_router)
 app.include_router(provider_accounts_router)
 app.include_router(range_strategy_router)
+app.include_router(statistical_router)
 app.include_router(telegram_router)
 app.include_router(tipster_router)
 
