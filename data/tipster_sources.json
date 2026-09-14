@@ -1,0 +1,4 @@
+{
+  "sources": [],
+  "notes": "Add public RSS/Atom/HTML tipster sources. Telegram channels are configured through TELEGRAM_CHANNELS. Do not add private/login-only URLs."
+}
