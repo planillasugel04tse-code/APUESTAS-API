@@ -6,6 +6,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
 from .db import connect
+from .peru_bookmakers import PERU_BOOKMAKER_REGISTRY, SUREBET_EXTRA_BOOKMAKERS
 
 
 PERU_LEAGUE_KEYWORDS = (
@@ -98,6 +99,43 @@ def _normalize_text(value: object) -> str:
     return " ".join(str(value or "").strip().lower().replace("_", " ").split())
 
 
+def _normalize_bookmaker(value: object) -> str:
+    return "".join(ch for ch in _normalize_text(value) if ch.isalnum())
+
+
+PERU_BOOKMAKER_KEYS = frozenset(
+    _normalize_bookmaker(value)
+    for row in PERU_BOOKMAKER_REGISTRY
+    for value in (row.get("brand"), row.get("domain"), row.get("oddspapi_slug"))
+)
+
+INTERNATIONAL_EXTRA_KEYS = frozenset(_normalize_bookmaker(value) for value in SUREBET_EXTRA_BOOKMAKERS)
+
+
+def _is_peru_bookmaker(bookmaker: object) -> bool:
+    return _normalize_bookmaker(bookmaker) in PERU_BOOKMAKER_KEYS
+
+
+def _is_international_bookmaker(bookmaker: object) -> bool:
+    return not _is_peru_bookmaker(bookmaker)
+
+
+def _valid_world_bookmaker_mix(selected: dict[str, tuple[str, float]]) -> bool:
+    """World Surebet policy: never Peru-vs-Peru only.
+
+    Accept either:
+      * at least one Peru bookmaker + at least one international bookmaker; or
+      * an arbitrage formed entirely by international bookmakers.
+
+    This deliberately excludes a Surebet whose participating bookmakers are
+    all Peru-only, while keeping Pinnacle and other international feeds in play.
+    """
+    bookmakers = [value[0] for value in selected.values()]
+    has_peru = any(_is_peru_bookmaker(name) for name in bookmakers)
+    has_international = any(_is_international_bookmaker(name) for name in bookmakers)
+    return has_international and (has_peru or all(_is_international_bookmaker(name) for name in bookmakers))
+
+
 def _is_peru_competition(competition: object) -> bool:
     text = _normalize_text(competition)
     return any(keyword in text for keyword in PERU_LEAGUE_KEYWORDS)
@@ -128,7 +166,7 @@ def find_arbitrage(
     scope: str = "all",
     league: str | None = None,
 ) -> list[Arbitrage]:
-    """Find stored-odds arbitrage, optionally separated by Peru/world and league."""
+    """Find stored-odds arbitrage, with explicit Peru/international mix rules."""
     normalized_scope = str(scope or "all").strip().lower()
     if normalized_scope not in {"all", "peru", "world"}:
         raise ValueError("scope must be one of: all, peru, world")
@@ -202,6 +240,15 @@ def find_arbitrage(
             continue
 
         selected = {key: best[key] for key in required}
+
+        # WORLD Surebet: Peru-only arbitrages are excluded. We deliberately
+        # keep both desired expansion modes: Peru + international, and
+        # international + international. The same rule applies to 2-way and
+        # 3-way markets because the participating bookmaker set is evaluated
+        # across every selected outcome.
+        if normalized_scope == "world" and not _valid_world_bookmaker_mix(selected):
+            continue
+
         implied_sum = sum(1.0 / quote[1] for quote in selected.values())
         if implied_sum < 1.0:
             competition = quotes[0]["competition"] or ""
