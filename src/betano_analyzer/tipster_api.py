@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
 from .tipster_intelligence import (
@@ -17,6 +16,7 @@ from .tipster_intelligence import (
     select_best_combinada,
     serialize,
 )
+from .tipster_market import best_market_quotes
 from .tipster_sources import collect_public_tipsters
 
 router = APIRouter(prefix="/api/v1/tipsters", tags=["tipsters"])
@@ -74,6 +74,53 @@ def _analysis(payload: TipsterAnalyzeRequest) -> AnalyzedPick:
 @router.post("/analyze")
 def analyze(payload: TipsterAnalyzeRequest) -> dict[str, Any]:
     return serialize(_analysis(payload))
+
+
+@router.get("/market-quotes")
+def market_quotes(
+    match_id: int,
+    market: str,
+    selection: str,
+    line: float | None = None,
+    max_age_minutes: int = Query(default=180, ge=1, le=1440),
+) -> dict[str, Any]:
+    quotes = best_market_quotes(
+        match_id,
+        market,
+        selection,
+        line=line,
+        max_age_minutes=max_age_minutes,
+    )
+    return {
+        "match_id": match_id,
+        "market": market,
+        "selection": selection,
+        "line": line,
+        "freshness_minutes": max_age_minutes,
+        "quotes": [
+            {
+                "bookmaker": quote.bookmaker,
+                "odds": quote.odds,
+                "market": quote.market,
+                "selection": quote.selection,
+                "line": quote.line,
+                "captured_at": quote.captured_at,
+                "age_seconds": round(quote.age_seconds, 1),
+            }
+            for quote in quotes
+        ],
+        "best": (
+            {
+                "bookmaker": quotes[0].bookmaker,
+                "odds": quotes[0].odds,
+                "captured_at": quotes[0].captured_at,
+                "age_seconds": round(quotes[0].age_seconds, 1),
+            }
+            if quotes
+            else None
+        ),
+        "status": "FOUND" if quotes else "NO_FRESH_QUOTE",
+    }
 
 
 @router.post("/ai")
