@@ -8,7 +8,7 @@ def test_surebet_dashboard_has_working_controls_and_empty_message():
 
     assert 'id="surebet-pre-button"' in html
     assert 'id="surebet-live-button"' in html
-    assert "/api/v1/arbitrage/pre-match?limit=100" in html or "'/api/v1/arbitrage/pre-match?'" in html
+    assert "/api/v1/arbitrage/pre-match?limit=100" in html or "URLSearchParams({limit:'100'" in html
     assert "hours:'1'" in html
     assert "limit_matches:'20'" in html  # internal safety control remains invisible to product wording
     assert "No hay surebets en este momento." in html
