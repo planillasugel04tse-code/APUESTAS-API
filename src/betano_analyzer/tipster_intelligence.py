@@ -77,6 +77,11 @@ def _prob_from_odds(odds: float | None) -> float | None:
     return 1.0 / odds
 
 
+def _edge(probability: float, odds: float | None) -> float | None:
+    implied = _prob_from_odds(odds)
+    return probability - implied if implied is not None else None
+
+
 def safer_market(pick: TipsterPick, safer_odds: float | None = None) -> SaferSelection:
     market = pick.market.strip().lower()
     selection = pick.selection.strip()
@@ -112,7 +117,6 @@ def _combined_probability(evidence: StatisticalEvidence, pick: TipsterPick) -> f
     if base is None:
         base = _prob_from_odds(pick.odds) or 0.0
 
-    # Missing dimensions never count as positive evidence. They only reduce confidence.
     probability = (
         0.55 * base
         + 0.15 * (evidence.recent_form_score if evidence.recent_form_score is not None else base)
@@ -123,11 +127,34 @@ def _combined_probability(evidence: StatisticalEvidence, pick: TipsterPick) -> f
     return _clip(probability * (0.75 + 0.25 * completeness))
 
 
+def _safer_selected(original: TipsterPick, safer: SaferSelection, probability: float) -> SaferSelection:
+    """Select the safer quote only when it is actually supplied and usable.
+
+    The model never invents a safer bookmaker price. A safer market is merely a
+    candidate until its real quote is provided and passes the same value guard.
+    """
+    if safer.safer_odds is None:
+        return safer
+    safer_edge = _edge(probability, safer.safer_odds)
+    original_edge = _edge(probability, original.odds)
+    if safer_edge is None or safer.safer_odds < MIN_ODD or safer.safer_odds > HARD_MAX_ODD:
+        return SaferSelection(*safer.__dict__.values()) if False else SaferSelection(
+            safer.original_market, safer.original_selection, safer.safer_market, safer.safer_selection,
+            safer.reason, safer.safer_odds, safer_edge, False
+        )
+    # Prefer the safer market only if it has value and does not materially destroy
+    # the original edge. Coverage is encoded by the transformed market itself.
+    selected = safer_edge >= 0.04 and (original_edge is None or safer_edge >= original_edge - 0.08)
+    return SaferSelection(
+        safer.original_market, safer.original_selection, safer.safer_market, safer.safer_selection,
+        safer.reason, safer.safer_odds, safer_edge, selected
+    )
+
+
 def analyze_pick(pick: TipsterPick, evidence: StatisticalEvidence, *, safer_odds: float | None = None) -> AnalyzedPick:
     probability = _combined_probability(evidence, pick)
     fair_odds = (1 / probability) if probability > 0 else HARD_MAX_ODD
-    implied = _prob_from_odds(pick.odds)
-    edge = probability - implied if implied is not None else None
+    edge = _edge(probability, pick.odds)
     value_score = _clip((edge or 0.0) * 2.5 + 0.5 * probability)
     safety_score = _clip(
         0.55 * probability
@@ -135,7 +162,7 @@ def analyze_pick(pick: TipsterPick, evidence: StatisticalEvidence, *, safer_odds
         + 0.20 * (evidence.agreement_score if evidence.agreement_score is not None else probability)
     )
 
-    safer = safer_market(pick, safer_odds)
+    safer = _safer_selected(pick, safer_market(pick, safer_odds), probability)
     reasons: list[str] = []
     if pick.odds is not None and pick.odds < MIN_ODD:
         reasons.append(f"cuota inferior a {MIN_ODD:.2f}")
@@ -168,7 +195,6 @@ def analyze_pick(pick: TipsterPick, evidence: StatisticalEvidence, *, safer_odds
 
 
 def _combo_score(items: tuple[AnalyzedPick, ...]) -> float:
-    # Penalize long tickets. The objective is not maximum odds; it is value + safety.
     return sum(item.value_score * 0.55 + item.safety_score * 0.45 for item in items) - 0.05 * (len(items) - 2)
 
 
@@ -198,7 +224,6 @@ def select_best_combinada(candidates: list[AnalyzedPick], max_legs: int = MAX_LE
             if not (MIN_ODD <= total <= HARD_MAX_ODD):
                 continue
             score = _combo_score(combo)
-            # Prefer two legs when scores are close; three legs need to add meaningful value.
             if size == 2:
                 score += 0.04
             if best is None or score > best[0]:
