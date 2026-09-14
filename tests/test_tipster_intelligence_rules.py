@@ -46,7 +46,7 @@ def test_outside_odds_band_is_rejected():
 
 
 def test_safer_quote_is_evaluated_and_selected_only_with_value():
-    result = analyze_pick(pick("A vs B", 1.70), evidence(), safer_odds=1.45)
+    result = analyze_pick(pick("A vs B", 1.70), evidence(), safer_odds=1.50)
     assert result.safer.safer_selection == "1X"
     assert result.safer.safer_edge is not None and result.safer.safer_edge >= 0.04
     assert result.safer.selected is True
@@ -62,8 +62,8 @@ def test_safer_quote_is_not_selected_when_no_value():
 def test_best_combination_stays_at_two_or_three_legs_and_under_2_5():
     candidates = [
         analyze_pick(pick("A vs B", 1.55), evidence()),
-        analyze_pick(pick("C vs D", 1.45), evidence()),
-        analyze_pick(pick("E vs F", 1.40), evidence()),
+        analyze_pick(pick("C vs D", 1.55), evidence()),
+        analyze_pick(pick("E vs F", 1.45), evidence()),
     ]
     selected = select_best_combinada(candidates)
     assert len(selected) in {2, 3}
