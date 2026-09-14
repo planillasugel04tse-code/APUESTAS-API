@@ -34,21 +34,18 @@ async def available_bookmakers() -> list[dict[str, Any]]:
 
 
 async def _dynamic_surebet_bookmakers() -> list[str]:
-    """All configured Peru candidates exposed by OddsPapi plus Pinnacle."""
     available = await available_bookmakers()
     by_slug = {row["slug"]: row for row in available if row.get("slug")}
     normalized = {_norm(row.get("name")): row["slug"] for row in available if row.get("slug")}
     selected: list[str] = []
-
     for legal in PERU_BOOKMAKER_REGISTRY:
         slug = str(legal["oddspapi_slug"])
         if slug in by_slug:
             selected.append(slug)
-            continue
-        matched = normalized.get(_norm(legal["brand"]))
-        if matched:
-            selected.append(matched)
-
+        else:
+            matched = normalized.get(_norm(legal["brand"]))
+            if matched:
+                selected.append(matched)
     for extra in SUREBET_EXTRA_BOOKMAKERS:
         if extra in by_slug:
             selected.append(extra)
@@ -56,7 +53,6 @@ async def _dynamic_surebet_bookmakers() -> list[str]:
             matched = normalized.get(_norm(extra))
             if matched:
                 selected.append(matched)
-
     return list(dict.fromkeys(selected))
 
 
@@ -68,9 +64,7 @@ async def selected_bookmakers() -> list[str]:
 
 
 async def peru_bookmakers() -> list[str]:
-    available = await available_bookmakers()
-    active_slugs = {row["slug"] for row in available if row.get("slug")}
-    return [slug for slug in registry_slugs() if slug in active_slugs]
+    return await _dynamic_surebet_bookmakers()
 
 
 async def peru_bookmaker_catalog() -> dict[str, Any]:
@@ -78,12 +72,10 @@ async def peru_bookmaker_catalog() -> dict[str, Any]:
     by_slug = {row["slug"]: row for row in available if row.get("slug")}
     selected = set(await selected_bookmakers())
     rows: list[dict[str, Any]] = []
-
     for legal in PERU_BOOKMAKER_REGISTRY:
         slug = str(legal["oddspapi_slug"])
         feed = by_slug.get(slug)
         rows.append({**legal, "available_in_oddspapi": feed is not None, "selected": slug in selected, "live_odds": feed.get("live_odds") if feed else None, "oddspapi_name": feed.get("name") if feed else None})
-
     pinnacle = by_slug.get("pinnacle")
     return {
         "provider": "oddspapi",
