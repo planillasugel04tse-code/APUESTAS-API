@@ -9,9 +9,9 @@ PERU_BOOKMAKER_REGISTRY: tuple[dict[str, Any], ...] = (
         "brand": "Betano",
         "domain": "betano.pe",
         "oddspapi_slug": "betano.pe",
-        "legal_status": "verify_official_register",
+        "legal_status": "verified_register_2026-09",
         "legal_source": "MINCETUR - Titulares de autorización de explotación",
-        "notes": "OddsPapi explicitly exposes the Betano PE feed; final legal status is checked against the live MINCETUR register.",
+        "notes": "The MINCETUR-derived register data identifies KAIZEN GAMING PERU S.A.C. and sports authorization RD 1541-2024 dated 27/03/2024 as vigente.",
     },
     {
         "brand": "Apuesta Total",
@@ -19,7 +19,7 @@ PERU_BOOKMAKER_REGISTRY: tuple[dict[str, Any], ...] = (
         "oddspapi_slug": "apuestatotal",
         "legal_status": "verified_register_2026-09",
         "legal_source": "MINCETUR - Titulares de autorización de explotación",
-        "notes": "September 2026 public-register checks identify Free Games S.A.C. and a vigente sports authorization.",
+        "notes": "The MINCETUR-derived register data identifies FREE GAMES S.A.C. and sports authorization RD 2656-2024 dated 24/05/2024 as vigente.",
     },
     {
         "brand": "Inkabet",
@@ -27,14 +27,16 @@ PERU_BOOKMAKER_REGISTRY: tuple[dict[str, Any], ...] = (
         "oddspapi_slug": "inkabet",
         "legal_status": "verified_register_2026-09",
         "legal_source": "MINCETUR - Titulares de autorización de explotación",
-        "notes": "September 2026 public-register checks identify Lucky Torito S.A.C. and a vigente sports authorization.",
+        "notes": "The MINCETUR-derived register data identifies LUCKY TORITO S.A.C. and sports authorization RD 3859-2024 dated 09/07/2024 as vigente.",
     },
 )
 
-# Other operators reported as Peru-authorized remain candidates until an exact
-# OddsPapi Peru feed is confirmed. This prevents mixing a global feed with a
-# locally authorized entity/domain.
+# Other operators with current Peru authorization evidence remain candidates
+# until an exact OddsPapi Peru feed is confirmed. This prevents mixing a global
+# feed with a locally authorized entity/domain.
 PERU_LEGAL_CANDIDATES: tuple[str, ...] = (
+    "Bet365",
+    "Betsson",
     "Betcris",
     "Te Apuesto",
     "Stake",
