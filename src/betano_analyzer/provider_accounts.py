@@ -181,6 +181,23 @@ def _extract_account_metrics(account: Any, headers: httpx.Headers) -> dict[str, 
     }
 
 
+def _redact_sensitive(value: Any) -> Any:
+    """Recursively remove credential material before returning provider payloads to the UI/API."""
+    sensitive_fragments = ("apikey", "api_key", "api-key", "secret", "token", "password", "authorization")
+    if isinstance(value, dict):
+        clean: dict[str, Any] = {}
+        for key, item in value.items():
+            normalized = str(key).lower().replace("-", "_")
+            if any(fragment in normalized for fragment in sensitive_fragments):
+                clean[str(key)] = "[REDACTED]"
+            else:
+                clean[str(key)] = _redact_sensitive(item)
+        return clean
+    if isinstance(value, list):
+        return [_redact_sensitive(item) for item in value]
+    return value
+
+
 async def check_oddspapi(api_key: str) -> dict[str, Any]:
     key = api_key.strip()
     if not key:
@@ -194,7 +211,7 @@ async def check_oddspapi(api_key: str) -> dict[str, Any]:
 
     return {
         "valid": True,
-        "account": payload,
+        "account": _redact_sensitive(payload),
         "usage": metrics,
         "requests_used": metrics["used"],
         "request_limit": metrics["limit"],
