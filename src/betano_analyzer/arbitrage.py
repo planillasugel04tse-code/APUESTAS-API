@@ -31,7 +31,12 @@ class Arbitrage:
 
 
 def _integer_stake_plan(outcomes: dict[str, dict[str, object]], target_profit: int) -> dict[str, object]:
-    """Find integer stakes whose guaranteed profit is at least target_profit."""
+    """Find integer stakes whose guaranteed profit is at least target_profit.
+
+    All displayed monetary values are integers. The search rounds the ideal
+    proportional allocation to whole units and increases the bankroll until
+    every outcome still guarantees at least the requested profit.
+    """
     if target_profit <= 0 or not outcomes:
         raise ValueError("target_profit must be positive and outcomes cannot be empty")
     odds = {key: float(value["odds"]) for key, value in outcomes.items()}
@@ -87,6 +92,7 @@ def calculate_stakes(outcomes: dict[str, dict[str, object]], total_stake: float)
 
 
 def build_target_profit_plans(outcomes: dict[str, dict[str, object]], targets: tuple[int, ...] = (250, 500, 1000, 3000, 5000)) -> dict[int, dict[str, object]]:
+    """Build whole-unit stake plans for the standard profit targets."""
     return {target: _integer_stake_plan(outcomes, target) for target in targets}
 
 
@@ -168,3 +174,67 @@ def _world_bookmaker_mix(selected: dict[str, tuple[str, float]]) -> str:
 
 def _valid_world_bookmaker_mix(selected: dict[str, tuple[str, float]]) -> bool:
     return _world_bookmaker_mix(selected) in {"PERU + INTERNATIONAL", "INTERNATIONAL + INTERNATIONAL"}
+
+
+def _is_peru_competition(competition: object) -> bool:
+    text = _normalize_text(competition)
+    return any(keyword in text for keyword in PERU_LEAGUE_KEYWORDS)
+
+
+def _scope_for_competition(competition: object) -> str:
+    return "peru" if _is_peru_competition(competition) else "world"
+
+
+def _scope_matches(scope: str, competition: object) -> bool:
+    normalized = str(scope or "all").strip().lower()
+    if normalized not in {"all", "peru", "world"}: raise ValueError("scope must be one of: all, peru, world")
+    return normalized == "all" or _scope_for_competition(competition) == normalized
+
+
+def _league_matches(league: str | None, competition: object) -> bool:
+    return not league or _normalize_text(league) in _normalize_text(competition)
+
+
+def find_arbitrage(limit: int = 100, *, live: bool = False, match_id: int | None = None, scope: str = "all", league: str | None = None, total_stake: float | None = None) -> list[Arbitrage]:
+    normalized_scope = str(scope or "all").strip().lower()
+    if normalized_scope not in {"all", "peru", "world"}: raise ValueError("scope must be one of: all, peru, world")
+    now = datetime.now(timezone.utc); stale_minutes = _live_stale_minutes()
+    with connect() as db:
+        rows = db.execute("""SELECT o.match_id,o.bookmaker,o.market,o.selection,o.line,o.odds,o.captured_at,m.home_team,m.away_team,m.kickoff,m.status,m.competition FROM odds o JOIN matches m ON m.id=o.match_id WHERE o.odds > 1 AND (? IS NULL OR o.match_id = ?) ORDER BY o.captured_at DESC""", (match_id, match_id)).fetchall()
+    latest = {}
+    for row in rows:
+        competition = row["competition"] or ""
+        if not _scope_matches(normalized_scope, competition) or not _league_matches(league, competition): continue
+        if _is_live(row["kickoff"], now, row["status"]) != live: continue
+        if live and _is_stale_live(row["captured_at"], now, stale_minutes): continue
+        key = (row["match_id"], str(row["market"]).lower(), row["line"], str(row["bookmaker"]).lower(), _selection_key(row["selection"]))
+        current = latest.get(key)
+        if current is None: latest[key] = row; continue
+        current_time = _captured_at(current["captured_at"]); row_time = _captured_at(row["captured_at"])
+        if row_time is not None and (current_time is None or row_time > current_time): latest[key] = row
+    groups = defaultdict(list)
+    for row in latest.values(): groups[(row["match_id"], row["market"], row["line"])].append(row)
+    result = []
+    for (current_match_id, market, line), quotes in groups.items():
+        best = {}
+        for row in quotes:
+            outcome = _selection_key(row["selection"]); price = float(row["odds"])
+            if outcome not in best or price > best[outcome][1]: best[outcome] = (row["bookmaker"], price)
+        base_market = _market_base(market)
+        if base_market == "1x2": required = {"home", "draw", "away"}
+        elif base_market in {"goals", "corners", "cards"}: required = {"over", "under"}
+        elif base_market == "btts": required = {"yes", "no"}
+        elif base_market in {"spread", "handicap", "asian_handicap"}: required = {"home", "away"}
+        else: continue
+        if not required.issubset(best): continue
+        selected = {key: best[key] for key in required}
+        mix = _world_bookmaker_mix(selected)
+        if normalized_scope == "world" and not _valid_world_bookmaker_mix(selected): continue
+        implied_sum = sum(1.0 / quote[1] for quote in selected.values())
+        if implied_sum >= 1.0: continue
+        competition = quotes[0]["competition"] or ""
+        stake_data = calculate_stakes({key: {"odds": quote[1]} for key, quote in selected.items()}, total_stake) if total_stake else None
+        target_data = build_target_profit_plans({key: {"odds": quote[1]} for key, quote in selected.items()})
+        result.append(Arbitrage(match_id=current_match_id, match=f"{quotes[0]['home_team']} vs {quotes[0]['away_team']}", market=market, line=line, outcomes={key: {"bookmaker": quote[0], "odds": quote[1], "classification": classify_bookmaker(quote[0])} for key, quote in selected.items()}, implied_sum=implied_sum, profit_margin=(1.0 / implied_sum) - 1.0, mode="live" if live else "pre_match", competition=competition, scope=_scope_for_competition(competition), bookmaker_mix=mix, total_stake=stake_data["total_stake"] if stake_data else None, total_return=stake_data["total_return"] if stake_data else None, guaranteed_profit=stake_data["guaranteed_profit"] if stake_data else None, roi_percent=stake_data["roi_percent"] if stake_data else None, target_profits=target_data))
+        if len(result) >= limit: break
+    return result
