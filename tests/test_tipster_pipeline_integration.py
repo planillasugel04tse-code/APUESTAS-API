@@ -28,6 +28,10 @@ def test_conservative_goal_quote_uses_transformed_line(tmp_path, monkeypatch):
             "INSERT INTO odds(match_id,bookmaker,market,selection,odds,captured_at,line) VALUES(?,?,?,?,?,?,?)",
             (match_id, "Book Safer", "goals", "Over 1.5", 1.55, now, 1.5),
         )
+        db.execute(
+            "INSERT INTO odds(match_id,bookmaker,market,selection,odds,captured_at,line) VALUES(?,?,?,?,?,?,?)",
+            (match_id, "betano.pe", "goals", "Over 2.5", 1.80, now, 2.5),
+        )
         db.commit()
 
     pick = TipsterPick(
@@ -46,3 +50,6 @@ def test_conservative_goal_quote_uses_transformed_line(tmp_path, monkeypatch):
     assert result.market.safer is not None
     assert result.market.safer.line == 1.5
     assert result.market.safer.odds == 1.55
+    assert result.market.peru
+    assert result.market.peru[0].bookmaker == "betano.pe"
+    assert result.market.peru[0].odds == 1.80
