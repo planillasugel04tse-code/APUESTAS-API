@@ -23,23 +23,85 @@ class Arbitrage:
     competition: str = ""
     scope: str = "world"
     bookmaker_mix: str = ""
-    total_stake: float | None = None
-    total_return: float | None = None
-    guaranteed_profit: float | None = None
-    roi_percent: float | None = None
+    total_stake: int | None = None
+    total_return: int | None = None
+    guaranteed_profit: int | None = None
+    roi_percent: int | None = None
+    target_profits: dict[int, dict[str, object]] | None = None
+
+
+def _integer_stake_plan(outcomes: dict[str, dict[str, object]], target_profit: int) -> dict[str, object]:
+    """Find integer stakes whose guaranteed profit is at least target_profit.
+
+    All displayed monetary values are integers. The search rounds the ideal
+    proportional allocation to whole units and increases the bankroll until
+    every outcome still guarantees at least the requested profit.
+    """
+    if target_profit <= 0 or not outcomes:
+        raise ValueError("target_profit must be positive and outcomes cannot be empty")
+    odds = {key: float(value["odds"]) for key, value in outcomes.items()}
+    if any(price <= 1 for price in odds.values()):
+        raise ValueError("all odds must be > 1")
+    implied_sum = sum(1.0 / price for price in odds.values())
+    if implied_sum >= 1:
+        raise ValueError("not a surebet")
+    ideal_total = target_profit / ((1.0 / implied_sum) - 1.0)
+    total = max(1, int(ideal_total))
+    while True:
+        ideal = {key: total * (1.0 / price) / implied_sum for key, price in odds.items()}
+        stakes = {key: max(1, int(round(value))) for key, value in ideal.items()}
+        # Correct rounding so the actual integer stake is exactly total.
+        diff = total - sum(stakes.values())
+        order = sorted(stakes, key=lambda key: ideal[key] - stakes[key], reverse=diff > 0)
+        step = 1 if diff > 0 else -1
+        for key in order[:abs(diff)]:
+            if step > 0 or stakes[key] > 1:
+                stakes[key] += step
+        actual_total = sum(stakes.values())
+        returns = {key: int(stakes[key] * odds[key]) for key in stakes}
+        guaranteed_return = min(returns.values())
+        guaranteed_profit = guaranteed_return - actual_total
+        if guaranteed_profit >= target_profit:
+            roi = int((guaranteed_profit / actual_total) * 100)
+            return {
+                "stakes": stakes,
+                "total_stake": actual_total,
+                "total_return": guaranteed_return,
+                "guaranteed_profit": guaranteed_profit,
+                "roi_percent": roi,
+                "implied_sum": implied_sum,
+            }
+        total += 1
 
 
 def calculate_stakes(outcomes: dict[str, dict[str, object]], total_stake: float) -> dict[str, object]:
-    """Allocate a bankroll proportionally to inverse odds for equalized return."""
+    """Return an integer-stake plan for a fixed bankroll."""
     if total_stake <= 0 or not outcomes:
         raise ValueError("total_stake must be positive and outcomes cannot be empty")
     odds = {key: float(value["odds"]) for key, value in outcomes.items()}
     if any(price <= 1 for price in odds.values()):
         raise ValueError("all odds must be > 1")
     implied_sum = sum(1.0 / price for price in odds.values())
-    total_return = total_stake / implied_sum
-    profit = total_return - total_stake
-    return {"stakes": {key: total_stake * (1.0 / price) / implied_sum for key, price in odds.items()}, "total_stake": total_stake, "total_return": total_return, "guaranteed_profit": profit, "roi_percent": profit / total_stake * 100.0, "implied_sum": implied_sum}
+    if implied_sum >= 1:
+        raise ValueError("not a surebet")
+    total = max(1, int(round(total_stake)))
+    ideal = {key: total * (1.0 / price) / implied_sum for key, price in odds.items()}
+    stakes = {key: max(1, int(round(value))) for key, value in ideal.items()}
+    diff = total - sum(stakes.values())
+    if diff > 0:
+        for key in sorted(stakes, key=lambda k: ideal[k] - stakes[k], reverse=True)[:diff]: stakes[key] += 1
+    elif diff < 0:
+        for key in sorted(stakes, key=lambda k: ideal[k] - stakes[k])[:abs(diff)]:
+            if stakes[key] > 1: stakes[key] -= 1
+    actual_total = sum(stakes.values())
+    guaranteed_return = min(int(stakes[key] * odds[key]) for key in stakes)
+    profit = guaranteed_return - actual_total
+    return {"stakes": stakes, "total_stake": actual_total, "total_return": guaranteed_return, "guaranteed_profit": profit, "roi_percent": int((profit / actual_total) * 100), "implied_sum": implied_sum}
+
+
+def build_target_profit_plans(outcomes: dict[str, dict[str, object]], targets: tuple[int, ...] = (250, 500, 1000, 3000, 5000)) -> dict[int, dict[str, object]]:
+    """Build whole-unit stake plans for the standard profit targets."""
+    return {target: _integer_stake_plan(outcomes, target) for target in targets}
 
 
 def _live_stale_minutes() -> int:
@@ -97,7 +159,6 @@ INTERNATIONAL_EXTRA_KEYS = frozenset(_normalize_bookmaker(value) for value in SU
 
 
 def classify_bookmaker(bookmaker: object) -> str:
-    """Conservative jurisdiction classifier. UNKNOWN quotes cannot form a SureBet."""
     key = _normalize_bookmaker(bookmaker)
     if key in PERU_BOOKMAKER_KEYS: return "PERU"
     if key in INTERNATIONAL_EXTRA_KEYS: return "INTERNATIONAL"
@@ -176,6 +237,7 @@ def find_arbitrage(limit: int = 100, *, live: bool = False, match_id: int | None
         if implied_sum >= 1.0: continue
         competition = quotes[0]["competition"] or ""
         stake_data = calculate_stakes({key: {"odds": quote[1]} for key, quote in selected.items()}, total_stake) if total_stake else None
-        result.append(Arbitrage(match_id=current_match_id, match=f"{quotes[0]['home_team']} vs {quotes[0]['away_team']}", market=market, line=line, outcomes={key: {"bookmaker": quote[0], "odds": quote[1], "classification": classify_bookmaker(quote[0])} for key, quote in selected.items()}, implied_sum=implied_sum, profit_margin=(1.0 / implied_sum) - 1.0, mode="live" if live else "pre_match", competition=competition, scope=_scope_for_competition(competition), bookmaker_mix=mix, total_stake=stake_data["total_stake"] if stake_data else None, total_return=stake_data["total_return"] if stake_data else None, guaranteed_profit=stake_data["guaranteed_profit"] if stake_data else None, roi_percent=stake_data["roi_percent"] if stake_data else None))
+        target_data = build_target_profit_plans({key: {"odds": quote[1]} for key, quote in selected.items()})
+        result.append(Arbitrage(match_id=current_match_id, match=f"{quotes[0]['home_team']} vs {quotes[0]['away_team']}", market=market, line=line, outcomes={key: {"bookmaker": quote[0], "odds": quote[1], "classification": classify_bookmaker(quote[0])} for key, quote in selected.items()}, implied_sum=implied_sum, profit_margin=(1.0 / implied_sum) - 1.0, mode="live" if live else "pre_match", competition=competition, scope=_scope_for_competition(competition), bookmaker_mix=mix, total_stake=stake_data["total_stake"] if stake_data else None, total_return=stake_data["total_return"] if stake_data else None, guaranteed_profit=stake_data["guaranteed_profit"] if stake_data else None, roi_percent=stake_data["roi_percent"] if stake_data else None, target_profits=target_data))
         if len(result) >= limit: break
     return result
