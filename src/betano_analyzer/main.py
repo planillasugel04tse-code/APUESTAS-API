@@ -16,6 +16,7 @@ from .oddspapi_api import router as oddspapi_router
 from .oddspapi_analysis_api import router as oddspapi_analysis_router
 from .oddspapi_odds_api import router as oddspapi_odds_router
 from .oddspapi_scan_api import router as oddspapi_scan_router
+from .oddspapi_stats_api import router as oddspapi_stats_router
 from .provider_accounts_api import router as provider_accounts_router
 from .provider_accounts_panel import provider_accounts_page
 from .range_strategy_api import router as range_strategy_router
@@ -67,6 +68,7 @@ app.include_router(oddspapi_router)
 app.include_router(oddspapi_analysis_router)
 app.include_router(oddspapi_odds_router)
 app.include_router(oddspapi_scan_router)
+app.include_router(oddspapi_stats_router)
 app.include_router(provider_accounts_router)
 app.include_router(range_strategy_router)
 app.include_router(statistical_router)
