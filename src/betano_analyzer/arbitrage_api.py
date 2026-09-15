@@ -36,16 +36,13 @@ async def live(
     scope: Scope = Query(default="all"),
     league: str | None = Query(default=None, max_length=120),
 ):
-    """Refresh live odds according to scope; provider batch limits stay internal."""
+    """Refresh the live SureBet universe once, then apply the requested scope filter."""
     try:
-        if scope == "peru":
-            sync = await sync_service.sync_oddspapi_betano_pe(
-                hours=hours, limit_matches=20, include_live=True, live_only=True,
-            )
-            refresh_scope = "peru"
-        else:
-            sync = await sync_global_live(hours=hours, bookmaker_cap=10)
-            refresh_scope = "world"
+        # One grouped OddsPapi request per fixture covers the discovered
+        # bookmaker universe. SureBet classification decides whether each
+        # combination is eligible for Peru↔International or International↔International.
+        sync = await sync_global_live(hours=hours, bookmaker_cap=20)
+        refresh_scope = "world_universe"
     except (RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
