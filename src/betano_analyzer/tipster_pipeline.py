@@ -17,6 +17,7 @@ class MarketEnrichment:
     original: MarketQuote | None
     safer: MarketQuote | None
     peru: tuple[MarketQuote, ...] = ()
+    safer_peru: tuple[MarketQuote, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -102,9 +103,9 @@ def enrich_tipster_pick(
 
     The analyzer compares the full stored market but, when a verified Peru
     quote exists, uses that Peru price as the executable price for value/safety
-    analysis. This keeps international prices visible without accidentally
-    pricing a Peru workflow from a non-Peru bookmaker.
+    analysis. International prices remain visible as comparison evidence.
     """
+    peru_slugs = registry_slugs()
     original = _as_market_quote(
         best_market_quote(
             match_id,
@@ -121,12 +122,13 @@ def enrich_tipster_pick(
             pick.selection,
             line=pick.line,
             max_age_minutes=max_age_minutes,
-            bookmakers=registry_slugs(),
+            bookmakers=peru_slugs,
         )
     )
 
     safer_candidate = safer_market(pick)
     safer = None
+    safer_peru: tuple[MarketQuote, ...] = ()
     if (safer_candidate.safer_market, safer_candidate.safer_selection) != (pick.market, pick.selection):
         safer_line = _selection_line(safer_candidate.safer_selection)
         safer = _as_market_quote(
@@ -138,9 +140,20 @@ def enrich_tipster_pick(
                 max_age_minutes=max_age_minutes,
             )
         )
+        safer_peru = tuple(
+            best_market_quotes(
+                match_id,
+                safer_candidate.safer_market,
+                safer_candidate.safer_selection,
+                line=safer_line,
+                max_age_minutes=max_age_minutes,
+                bookmakers=peru_slugs,
+            )
+        )
 
     statistics = _statistical_enrichment(match_id, pick)
     analysis_quote = peru_quotes[0] if peru_quotes else original
+    conservative_quote = safer_peru[0] if safer_peru else safer
     priced_pick = pick
     if analysis_quote is not None:
         priced_pick = TipsterPick(
@@ -170,11 +183,11 @@ def enrich_tipster_pick(
             agreement_score=evidence.agreement_score,
             data_completeness=max(evidence.data_completeness, statistics.data_completeness),
         )
-    safer_odds = safer.odds if safer is not None else None
+    safer_odds = conservative_quote.odds if conservative_quote is not None else None
     analysis = analyze_pick(priced_pick, enriched_evidence, safer_odds=safer_odds)
     return EnrichedTipsterResult(
         analysis=analysis,
-        market=MarketEnrichment(original=original, safer=safer, peru=peru_quotes),
+        market=MarketEnrichment(original=original, safer=safer, peru=peru_quotes, safer_peru=safer_peru),
         statistics=statistics,
     )
 
@@ -212,6 +225,9 @@ def serialize_enriched(result: EnrichedTipsterResult) -> dict[str, Any]:
                 "edge": analysis.safer.safer_edge,
                 "selected": analysis.safer.selected,
                 "reason": analysis.safer.reason,
+                "price_source": (
+                    result.market.safer_peru[0].bookmaker if result.market.safer_peru else (result.market.safer.bookmaker if result.market.safer else None)
+                ),
             },
         },
         "market": {
@@ -219,6 +235,8 @@ def serialize_enriched(result: EnrichedTipsterResult) -> dict[str, Any]:
             "safer": _quote_dict(result.market.safer),
             "peru": [_quote_dict(quote) for quote in result.market.peru],
             "peru_best": _quote_dict(result.market.peru[0]) if result.market.peru else None,
+            "safer_peru": [_quote_dict(quote) for quote in result.market.safer_peru],
+            "safer_peru_best": _quote_dict(result.market.safer_peru[0]) if result.market.safer_peru else None,
         },
         "statistics": asdict(result.statistics),
     }
