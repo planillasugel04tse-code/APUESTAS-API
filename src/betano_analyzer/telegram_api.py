@@ -3,7 +3,16 @@ from pydantic import BaseModel
 
 from .telegram.backtest import evaluate_telegram_backtest
 from .telegram.config import load_telegram_config
-from .telegram.full_pipeline import process_telegram_signal_full, retry_pending_matches_full
+from .telegram.full_pipeline import (
+    process_telegram_signal_full,
+    retry_pending_matches_full,
+)
+
+# Compatibility aliases: existing consumers/tests historically patched these
+# names. They now point to the canonical full pipeline rather than the legacy
+# Telegram-only adapter.
+process_telegram_signal = process_telegram_signal_full
+retry_pending_matches = retry_pending_matches_full
 
 router = APIRouter(prefix="/api/v1/telegram", tags=["telegram"])
 
@@ -19,7 +28,7 @@ class TelegramMessage(BaseModel):
 def ingest_telegram_signal(data: TelegramMessage):
     """Process a Telegram tipster message through the canonical full pipeline."""
     try:
-        return process_telegram_signal_full(
+        return process_telegram_signal(
             data.text, channel=data.channel, message_id=data.message_id, tipster=data.tipster
         )
     except ValueError as exc:
@@ -59,7 +68,7 @@ def telegram_config_status():
 def retry_pending():
     """Re-match pending Telegram signals and run full tipster enrichment on resolved ones."""
     try:
-        return retry_pending_matches_full()
+        return retry_pending_matches()
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
