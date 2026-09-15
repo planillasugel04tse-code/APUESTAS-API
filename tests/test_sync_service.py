@@ -6,10 +6,6 @@ import pytest
 from betano_analyzer.sync_service import SyncSummary, _rematch_pending_telegram
 
 
-# ---------------------------------------------------------------------------
-# SyncSummary fields
-# ---------------------------------------------------------------------------
-
 def test_sync_summary_fields_match_constructor():
     s = SyncSummary(leagues=5, matches_seen=10, matches_saved=3,
                     odds_seen=200, odds_saved=150,
@@ -34,10 +30,6 @@ def test_sync_summary_is_immutable():
     with pytest.raises((AttributeError, TypeError)):
         s.leagues = 99  # type: ignore[misc]
 
-
-# ---------------------------------------------------------------------------
-# _rematch_pending_telegram() resilience — must never propagate exceptions
-# ---------------------------------------------------------------------------
 
 def test_rematch_swallows_import_errors(monkeypatch):
     """If the Telegram full pipeline is unavailable, the sync must still succeed."""
@@ -75,10 +67,6 @@ def test_rematch_calls_full_pipeline(monkeypatch):
     assert calls == [1]
 
 
-# ---------------------------------------------------------------------------
-# sync_oddspapi_betano_pe input validation
-# ---------------------------------------------------------------------------
-
 @pytest.mark.anyio
 async def test_sync_oddspapi_rejects_invalid_hours():
     from betano_analyzer.sync_service import sync_oddspapi_betano_pe
@@ -91,3 +79,24 @@ async def test_sync_oddspapi_rejects_invalid_limit_matches():
     from betano_analyzer.sync_service import sync_oddspapi_betano_pe
     with pytest.raises(ValueError, match="limit_matches"):
         await sync_oddspapi_betano_pe(limit_matches=0)
+
+
+@pytest.mark.anyio
+async def test_sync_oddspapi_live_only_forces_include_live(monkeypatch):
+    """live_only=True must request status_id=1 (live fixtures)."""
+    import betano_analyzer.sync_service as ss
+
+    captured_statuses: list[int] = []
+
+    async def _fake_fixtures(from_time, to_time, status_id, bookmaker):
+        captured_statuses.append(status_id)
+        return []
+
+    async def _fake_catalog():
+        return {}
+
+    monkeypatch.setattr(ss, "fetch_fixtures", _fake_fixtures)
+    monkeypatch.setattr(ss, "fetch_market_catalog", _fake_catalog)
+
+    await ss.sync_oddspapi_betano_pe(live_only=True, hours=1, limit_matches=5)
+    assert 1 in captured_statuses, f"Expected status_id=1 in {captured_statuses}"
