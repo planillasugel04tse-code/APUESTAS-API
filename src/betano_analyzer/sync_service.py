@@ -29,10 +29,13 @@ def _set_match_status(external_ids: set[str], status: str) -> None:
 
 
 def _rematch_pending_telegram() -> None:
+    """Re-match pending Telegram signals through the canonical full pipeline."""
     try:
-        from .telegram.service import retry_pending_matches
-        retry_pending_matches()
+        from .telegram.full_pipeline import retry_pending_matches_full
+        retry_pending_matches_full()
     except Exception:
+        # Telegram must never make an odds sync fail; the pending signals can
+        # be retried later through the dedicated endpoint.
         return
 
 
