@@ -39,11 +39,8 @@ window.addEventListener('DOMContentLoaded',()=>{setSurebetScope('peru');loadSure
 
 
 def dashboard_response(today: date) -> HTMLResponse:
-    # The dashboard is the application entry point. Do not expose Surebet until
-    # an OddsPapi account has been activated through the provider connection flow.
     if not oddspapi_connected():
         return provider_accounts_page()
-
     html = dashboard_html(today)
     html, n = re.subn(r'<div class="card" id="surebet-section">.*?(?=<div class="card" id="final-section">)', _CARD + '\n', html, count=1, flags=re.S)
     if n == 0:
