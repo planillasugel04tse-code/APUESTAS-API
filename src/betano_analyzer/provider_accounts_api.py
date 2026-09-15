@@ -32,6 +32,33 @@ async def check_account(data: ProviderAccountInput):
         return {"valid": False, "error": str(exc)}
 
 
+@router.post("/connect")
+async def connect_account(data: ProviderAccountInput):
+    """Validate the key first, then persist and activate it atomically from the UI flow."""
+    if data.provider.strip().lower() != "oddspapi":
+        raise HTTPException(status_code=400, detail="Proveedor no soportado")
+    try:
+        checked = await check_oddspapi(data.api_key)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"No se pudo comprobar OddsPapi: {exc}") from exc
+    if not checked.get("valid"):
+        raise HTTPException(status_code=400, detail=checked.get("error") or "API Key de OddsPapi no válida")
+    try:
+        saved = save_account(data.provider, data.label, data.email, data.api_key, data.account_id)
+        account = activate_account(saved["id"])
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "connected": True,
+        "account": account,
+        "usage": checked.get("usage", {}),
+        "plan": checked.get("plan"),
+        "subscription_status": checked.get("subscription_status"),
+        "valid_from": checked.get("valid_from"),
+        "valid_until": checked.get("valid_until"),
+    }
+
+
 @router.post("")
 def create_or_update_account(data: ProviderAccountInput):
     try:
