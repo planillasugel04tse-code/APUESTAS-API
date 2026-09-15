@@ -98,7 +98,13 @@ def enrich_tipster_pick(
     *,
     max_age_minutes: int = 180,
 ) -> EnrichedTipsterResult:
-    """Attach fresh stored odds and historical statistics without external calls."""
+    """Attach fresh stored odds and historical statistics without external calls.
+
+    The analyzer compares the full stored market but, when a verified Peru
+    quote exists, uses that Peru price as the executable price for value/safety
+    analysis. This keeps international prices visible without accidentally
+    pricing a Peru workflow from a non-Peru bookmaker.
+    """
     original = _as_market_quote(
         best_market_quote(
             match_id,
@@ -134,15 +140,16 @@ def enrich_tipster_pick(
         )
 
     statistics = _statistical_enrichment(match_id, pick)
+    analysis_quote = peru_quotes[0] if peru_quotes else original
     priced_pick = pick
-    if original is not None:
+    if analysis_quote is not None:
         priced_pick = TipsterPick(
             source=pick.source,
             source_type=pick.source_type,
             event=pick.event,
             market=pick.market,
             selection=pick.selection,
-            odds=original.odds,
+            odds=analysis_quote.odds,
             line=pick.line,
             sport=pick.sport,
             league=pick.league,
@@ -184,6 +191,9 @@ def serialize_enriched(result: EnrichedTipsterResult) -> dict[str, Any]:
             "value_score": analysis.value_score,
             "safety_score": analysis.safety_score,
             "rejection_reasons": list(analysis.rejection_reasons),
+            "price_source": (
+                result.market.peru[0].bookmaker if result.market.peru else (result.market.original.bookmaker if result.market.original else None)
+            ),
             "pick": {
                 "source": analysis.pick.source,
                 "source_type": analysis.pick.source_type,
