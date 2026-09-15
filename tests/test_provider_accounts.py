@@ -3,6 +3,7 @@ import json
 from fastapi.testclient import TestClient
 
 import betano_analyzer.provider_accounts as accounts_module
+import betano_analyzer.provider_accounts_api as accounts_api
 from betano_analyzer.main import app
 
 
@@ -41,3 +42,27 @@ def test_save_account_masks_key_and_keeps_it_local(tmp_path, monkeypatch):
     assert activated["active"] is True
     assert "ODDSPAPI_KEY=abcdefghijklmnop1234" in env_file.read_text(encoding="utf-8")
     assert "ODDSPAPI_ENABLED=true" in env_file.read_text(encoding="utf-8")
+
+
+def test_connect_validates_then_saves_and_activates(tmp_path, monkeypatch):
+    accounts_file = tmp_path / "provider_accounts.json"
+    env_file = tmp_path / ".env.local"
+    monkeypatch.setattr(accounts_module, "ACCOUNTS_FILE", accounts_file)
+    monkeypatch.setattr(accounts_module, "LOCAL_ENV_FILE", env_file)
+    monkeypatch.setattr(accounts_module, "DATA_DIR", tmp_path)
+
+    async def fake_check(api_key):
+        assert api_key == "valid-key-123"
+        return {"valid": True, "usage": {"display": "10 / 500"}, "plan": "test"}
+
+    monkeypatch.setattr(accounts_api, "check_oddspapi", fake_check)
+    response = client.post(
+        "/api/v1/provider-accounts/connect",
+        json={"provider": "oddspapi", "label": "Panel", "email": "", "api_key": "valid-key-123"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["connected"] is True
+    assert payload["account"]["active"] is True
+    assert payload["account"]["api_key_masked"] != "valid-key-123"
+    assert "ODDSPAPI_KEY=valid-key-123" in env_file.read_text(encoding="utf-8")
