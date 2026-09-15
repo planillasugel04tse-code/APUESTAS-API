@@ -31,12 +31,7 @@ class Arbitrage:
 
 
 def _integer_stake_plan(outcomes: dict[str, dict[str, object]], target_profit: int) -> dict[str, object]:
-    """Find integer stakes whose guaranteed profit is at least target_profit.
-
-    All displayed monetary values are integers. The search rounds the ideal
-    proportional allocation to whole units and increases the bankroll until
-    every outcome still guarantees at least the requested profit.
-    """
+    """Find integer stakes whose guaranteed profit is at least target_profit."""
     if target_profit <= 0 or not outcomes:
         raise ValueError("target_profit must be positive and outcomes cannot be empty")
     odds = {key: float(value["odds"]) for key, value in outcomes.items()}
@@ -92,7 +87,6 @@ def calculate_stakes(outcomes: dict[str, dict[str, object]], total_stake: float)
 
 
 def build_target_profit_plans(outcomes: dict[str, dict[str, object]], targets: tuple[int, ...] = (250, 500, 1000, 3000, 5000)) -> dict[int, dict[str, object]]:
-    """Build whole-unit stake plans for the standard profit targets."""
     return {target: _integer_stake_plan(outcomes, target) for target in targets}
 
 
@@ -159,7 +153,6 @@ def classify_bookmaker(bookmaker: object) -> str:
 
 
 def _is_peru_bookmaker(bookmaker: object) -> bool:
-    """Backward-compatible predicate backed by the canonical Peru registry."""
     return classify_bookmaker(bookmaker) == "PERU"
 
 
@@ -173,6 +166,8 @@ def _world_bookmaker_mix(selected: dict[str, tuple[str, float]]) -> str:
 
 
 def _valid_world_bookmaker_mix(selected: dict[str, tuple[str, float]]) -> bool:
+    if len({quote[0] for quote in selected.values()}) < 2:
+        return False
     return _world_bookmaker_mix(selected) in {"PERU + INTERNATIONAL", "INTERNATIONAL + INTERNATIONAL"}
 
 
