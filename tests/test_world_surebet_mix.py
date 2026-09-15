@@ -24,6 +24,12 @@ def test_international_plus_international_is_valid():
     assert _world_bookmaker_mix(selected) == "INTERNATIONAL + INTERNATIONAL"
 
 
+def test_expanded_international_registry_classifies_betfair():
+    assert classify_bookmaker("Betfair") == "INTERNATIONAL"
+    assert classify_bookmaker("betfair") == "INTERNATIONAL"
+    assert not _is_peru_bookmaker("Betfair")
+
+
 def test_peru_plus_peru_is_rejected_from_world():
     selected = {
         "home": ("Betano", 2.20),
