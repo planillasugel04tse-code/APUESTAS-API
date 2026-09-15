@@ -6,9 +6,9 @@ from datetime import datetime, timedelta, timezone
 from .db import connect
 from .ingestion_service import save_matches, save_odds
 from .ingest import filter_competitions
-from .oddspapi_io import ODDSPAPI_BETANO_PE, fetch_fixtures, fetch_market_catalog, fetch_odds
+from .oddspapi_io import ODDSPAPI_BETANO_PE, fetch_fixtures, fetch_market_catalog, fetch_odds, fetch_odds_multi_bookmaker
 from .odds_api_io import TARGET_LEAGUES, fetch_events, fetch_live_events, fetch_odds_multi
-
+from .peru_bookmakers import PERU_BOOKMAKER_CANDIDATES, PERU_BOOKMAKER_REGISTRY, SUREBET_EXTRA_BOOKMAKERS
 
 @dataclass(frozen=True)
 class SyncSummary:
@@ -22,43 +22,35 @@ class SyncSummary:
 
 
 def _set_match_status(external_ids: set[str], status: str) -> None:
-    if not external_ids:
-        return
+    if not external_ids: return
     with connect() as db:
         placeholders = ",".join("?" for _ in external_ids)
-        db.execute(
-            f"UPDATE matches SET status=? WHERE external_id IN ({placeholders})",
-            (status, *sorted(external_ids)),
-        )
+        db.execute(f"UPDATE matches SET status=? WHERE external_id IN ({placeholders})", (status, *sorted(external_ids)))
 
 
 def _rematch_pending_telegram() -> None:
-    """Best-effort rematching after fixture/odds synchronization.
-
-    The local import avoids coupling the generic sync module to the Telegram
-    collector at import time. A Telegram failure must never make a successful
-    odds synchronization fail.
-    """
     try:
         from .telegram.service import retry_pending_matches
-
         retry_pending_matches()
     except Exception:
-        # Sync is the source-of-truth operation; Telegram rematching is a
-        # follow-up convenience and can be retried independently via the API.
         return
+
+
+def _surebet_bookmakers() -> list[str]:
+    ordered = [str(row["oddspapi_slug"]) for row in PERU_BOOKMAKER_REGISTRY]
+    ordered += [str(row["oddspapi_slug"]) for row in PERU_BOOKMAKER_CANDIDATES]
+    ordered += [str(value) for value in SUREBET_EXTRA_BOOKMAKERS]
+    return list(dict.fromkeys(ordered))
 
 
 async def sync_odds(bookmakers: list[str], include_live: bool = False, limit_per_league: int = 100) -> SyncSummary:
     all_matches = []
     for league in TARGET_LEAGUES:
         all_matches.extend(await fetch_events(league, status="pending", limit=limit_per_league))
-
     matches_seen, matches_saved = save_matches(all_matches)
     event_ids = [m.external_id for m in all_matches]
     odds = await fetch_odds_multi(event_ids, bookmakers=bookmakers) if event_ids else []
     odds_seen, odds_saved = save_odds(odds)
-
     live_seen = live_saved = 0
     if include_live:
         live_matches = await fetch_live_events()
@@ -67,92 +59,49 @@ async def sync_odds(bookmakers: list[str], include_live: bool = False, limit_per
         if live_matches:
             live_odds = await fetch_odds_multi([m.external_id for m in live_matches], bookmakers=bookmakers)
             live_odds_seen, live_odds_saved = save_odds(live_odds)
-            odds_seen += live_odds_seen
-            odds_saved += live_odds_saved
-
+            odds_seen += live_odds_seen; odds_saved += live_odds_saved
     _set_match_status({m.external_id for m in all_matches}, "scheduled")
     summary = SyncSummary(len(TARGET_LEAGUES), matches_seen, matches_saved, odds_seen, odds_saved, live_seen, live_saved)
-    _rematch_pending_telegram()
-    return summary
+    _rematch_pending_telegram(); return summary
 
 
-async def sync_oddspapi_betano_pe(
-    *,
-    hours: int = 48,
-    limit_matches: int = 20,
-    include_live: bool = False,
-    live_only: bool = False,
-) -> SyncSummary:
-    """Import a bounded Betano PE window through OddsPapi.
-
-    When ``live_only`` is true, only live fixtures are requested. This is used
-    by the on-demand live surebet button so normal dashboard loads do not
-    consume live odds calls.
-    """
-    if hours < 1 or hours > 48:
-        raise ValueError("hours debe estar entre 1 y 48")
-    if limit_matches < 1 or limit_matches > 50:
-        raise ValueError("limit_matches debe estar entre 1 y 50")
-    if live_only and not include_live:
-        include_live = True
-
-    now = datetime.now(timezone.utc)
-    end = now + timedelta(hours=hours)
+async def sync_oddspapi_betano_pe(*, hours: int = 48, limit_matches: int = 20, include_live: bool = False, live_only: bool = False) -> SyncSummary:
+    """Legacy bounded Betano PE import retained for the existing dashboard."""
+    if hours < 1 or hours > 48: raise ValueError("hours debe estar entre 1 y 48")
+    if limit_matches < 1 or limit_matches > 50: raise ValueError("limit_matches debe estar entre 1 y 50")
+    if live_only and not include_live: include_live = True
+    now = datetime.now(timezone.utc); end = now + timedelta(hours=hours)
     statuses = [1] if live_only else ([0, 1] if include_live else [0])
-
-    market_catalog = await fetch_market_catalog()
-    pending_matches = []
-    live_matches = []
+    market_catalog = await fetch_market_catalog(); pending_matches = []; live_matches = []
     for status_id in statuses:
-        found = await fetch_fixtures(
-            from_time=now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            to_time=end.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            status_id=status_id,
-            bookmaker=ODDSPAPI_BETANO_PE,
-        )
-        if status_id == 1:
-            live_matches.extend(found)
-        else:
-            pending_matches.extend(found)
-
+        found = await fetch_fixtures(from_time=now.strftime("%Y-%m-%dT%H:%M:%SZ"), to_time=end.strftime("%Y-%m-%dT%H:%M:%SZ"), status_id=status_id, bookmaker=ODDSPAPI_BETANO_PE)
+        (live_matches if status_id == 1 else pending_matches).extend(found)
     all_matches = pending_matches + live_matches
     unique = {match.external_id: match for match in filter_competitions(all_matches)}
     selected_matches = list(unique.values())[:limit_matches]
     selected_live_ids = {match.external_id for match in live_matches} & set(unique)
-
     matches_seen, matches_saved = save_matches(selected_matches)
     _set_match_status(set(m.external_id for m in selected_matches) - selected_live_ids, "scheduled")
     _set_match_status(selected_live_ids, "live")
-
     odds = []
-    for match in selected_matches:
-        odds.extend(await fetch_odds(match.external_id, bookmaker=ODDSPAPI_BETANO_PE, market_catalog=market_catalog))
+    for match in selected_matches: odds.extend(await fetch_odds(match.external_id, bookmaker=ODDSPAPI_BETANO_PE, market_catalog=market_catalog))
     odds_seen, odds_saved = save_odds(odds)
-
     live_seen = sum(match.external_id in selected_live_ids for match in selected_matches)
-    summary = SyncSummary(
-        leagues=8,
-        matches_seen=matches_seen,
-        matches_saved=matches_saved,
-        odds_seen=odds_seen,
-        odds_saved=odds_saved,
-        live_matches_seen=live_seen,
-        live_matches_saved=live_seen,
-    )
-    _rematch_pending_telegram()
-    return summary
+    summary = SyncSummary(8, matches_seen, matches_saved, odds_seen, odds_saved, live_seen, live_seen)
+    _rematch_pending_telegram(); return summary
 
 
 async def verify_oddspapi_betano_pe_match(match_id: int) -> SyncSummary:
-    """Refresh Betano PE odds for exactly one stored fixture."""
+    """Verify one fixture with a single grouped OddsPapi request across the SureBet universe."""
     with connect() as db:
         row = db.execute("SELECT external_id,status FROM matches WHERE id=?", (match_id,)).fetchone()
-    if not row:
-        raise ValueError("Partido no encontrado")
-
-    market_catalog = await fetch_market_catalog()
-    odds = await fetch_odds(row["external_id"], bookmaker=ODDSPAPI_BETANO_PE, market_catalog=market_catalog)
+    if not row: raise ValueError("Partido no encontrado")
+    catalog = await fetch_market_catalog()
+    grouped = await fetch_odds_multi_bookmaker(row["external_id"], _surebet_bookmakers(), market_catalog=catalog)
+    odds = []
+    if isinstance(grouped, dict):
+        for rows in grouped.values(): odds.extend(rows)
+    else: odds.extend(grouped or [])
     odds_seen, odds_saved = save_odds(odds)
     summary = SyncSummary(8, 1, 0, odds_seen, odds_saved)
-    _rematch_pending_telegram()
-    return summary
+    _rematch_pending_telegram(); return summary
