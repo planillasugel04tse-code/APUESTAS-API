@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from types import SimpleNamespace
 
 from betano_analyzer.telegram import full_pipeline
@@ -7,28 +8,23 @@ from betano_analyzer.telegram import full_pipeline
 
 class _FakeDb:
     def __init__(self):
-        self.analysis = '{"status":"success"}'
         self.updated = None
 
     def execute(self, sql, params=()):
         if sql.startswith("SELECT analysis_result"):
-            return self
+            return SimpleNamespace(fetchone=lambda: {"analysis_result": '{"status":"success"}'})
         if sql.startswith("UPDATE telegram_signals"):
             self.updated = params
-            return self
+            return SimpleNamespace()
         raise AssertionError(f"unexpected SQL: {sql}")
-
-    def fetchone(self):
-        return {"analysis_result": self.analysis}
 
     def commit(self):
         pass
 
-    def __enter__(self):
-        return self
 
-    def __exit__(self, *args):
-        return False
+@contextmanager
+def _fake_connect(db):
+    yield db
 
 
 def test_process_telegram_signal_full_runs_canonical_enrichment(monkeypatch):
@@ -62,7 +58,7 @@ def test_process_telegram_signal_full_runs_canonical_enrichment(monkeypatch):
     monkeypatch.setattr(full_pipeline, "parse_telegram_message", lambda *args, **kwargs: parsed)
     monkeypatch.setattr(full_pipeline, "enrich_tipster_pick", lambda *args, **kwargs: object())
     monkeypatch.setattr(full_pipeline, "serialize_enriched", lambda result: serialized)
-    monkeypatch.setattr(full_pipeline, "connect", lambda: db)
+    monkeypatch.setattr(full_pipeline, "connect", lambda: _fake_connect(db))
 
     result = full_pipeline.process_telegram_signal_full(
         "Home vs Away Over 1.5 @1.70",
