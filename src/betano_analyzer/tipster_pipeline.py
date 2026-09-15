@@ -5,9 +5,10 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 from .db import connect, initialize
+from .peru_bookmakers import registry_slugs
 from .team_statistics import build_match_probability
 from .tipster_intelligence import AnalyzedPick, StatisticalEvidence, TipsterPick, analyze_pick, safer_market
-from .tipster_market import MarketQuote, best_market_quote
+from .tipster_market import MarketQuote, best_market_quote, best_market_quotes
 
 
 @dataclass(frozen=True)
@@ -15,6 +16,7 @@ class MarketEnrichment:
     """Real stored-market prices attached to one normalized tipster pick."""
     original: MarketQuote | None
     safer: MarketQuote | None
+    peru: tuple[MarketQuote, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -106,6 +108,16 @@ def enrich_tipster_pick(
             max_age_minutes=max_age_minutes,
         )
     )
+    peru_quotes = tuple(
+        best_market_quotes(
+            match_id,
+            pick.market,
+            pick.selection,
+            line=pick.line,
+            max_age_minutes=max_age_minutes,
+            bookmakers=registry_slugs(),
+        )
+    )
 
     safer_candidate = safer_market(pick)
     safer = None
@@ -155,7 +167,7 @@ def enrich_tipster_pick(
     analysis = analyze_pick(priced_pick, enriched_evidence, safer_odds=safer_odds)
     return EnrichedTipsterResult(
         analysis=analysis,
-        market=MarketEnrichment(original=original, safer=safer),
+        market=MarketEnrichment(original=original, safer=safer, peru=peru_quotes),
         statistics=statistics,
     )
 
@@ -195,6 +207,8 @@ def serialize_enriched(result: EnrichedTipsterResult) -> dict[str, Any]:
         "market": {
             "original": _quote_dict(result.market.original),
             "safer": _quote_dict(result.market.safer),
+            "peru": [_quote_dict(quote) for quote in result.market.peru],
+            "peru_best": _quote_dict(result.market.peru[0]) if result.market.peru else None,
         },
         "statistics": asdict(result.statistics),
     }
