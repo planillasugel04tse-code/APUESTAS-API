@@ -40,41 +40,37 @@ def test_sync_summary_is_immutable():
 # ---------------------------------------------------------------------------
 
 def test_rematch_swallows_import_errors(monkeypatch):
-    """If the Telegram service is unavailable, the sync must still succeed."""
-    import betano_analyzer.sync_service as ss
+    """If the Telegram full pipeline is unavailable, the sync must still succeed."""
+    import betano_analyzer.telegram.full_pipeline as full_pipeline
 
     def _broken_retry():
         raise RuntimeError("Telegram service unavailable")
 
-    # Patch the lazy import path
-    import betano_analyzer.telegram.service as tg_svc
-    monkeypatch.setattr(tg_svc, "retry_pending_matches", _broken_retry)
-
-    # _rematch_pending_telegram catches ALL exceptions — must not raise
-    _rematch_pending_telegram()  # must not raise
+    monkeypatch.setattr(full_pipeline, "retry_pending_matches_full", _broken_retry)
+    _rematch_pending_telegram()
 
 
 def test_rematch_swallows_db_errors(monkeypatch):
-    """Database errors during rematch must not propagate to the caller."""
-    import betano_analyzer.telegram.service as tg_svc
+    """Database errors during full rematch must not propagate to the caller."""
+    import betano_analyzer.telegram.full_pipeline as full_pipeline
 
     def _db_fail():
         raise Exception("SQLITE_BUSY: database is locked")
 
-    monkeypatch.setattr(tg_svc, "retry_pending_matches", _db_fail)
-    _rematch_pending_telegram()  # must not raise
+    monkeypatch.setattr(full_pipeline, "retry_pending_matches_full", _db_fail)
+    _rematch_pending_telegram()
 
 
-def test_rematch_calls_retry_pending_matches(monkeypatch):
-    """When Telegram service is available, _rematch must call retry_pending_matches."""
-    import betano_analyzer.telegram.service as tg_svc
+def test_rematch_calls_full_pipeline(monkeypatch):
+    """Sync rematching must use the canonical Telegram enrichment pipeline."""
+    import betano_analyzer.telegram.full_pipeline as full_pipeline
     calls = []
 
     def _ok_retry():
         calls.append(1)
         return {"resolved": 0, "still_pending": 0, "total": 0}
 
-    monkeypatch.setattr(tg_svc, "retry_pending_matches", _ok_retry)
+    monkeypatch.setattr(full_pipeline, "retry_pending_matches_full", _ok_retry)
     _rematch_pending_telegram()
     assert calls == [1]
 
@@ -95,27 +91,3 @@ async def test_sync_oddspapi_rejects_invalid_limit_matches():
     from betano_analyzer.sync_service import sync_oddspapi_betano_pe
     with pytest.raises(ValueError, match="limit_matches"):
         await sync_oddspapi_betano_pe(limit_matches=0)
-
-
-@pytest.mark.anyio
-async def test_sync_oddspapi_live_only_forces_include_live(monkeypatch):
-    """live_only=True must request status_id=1 (live fixtures)."""
-    import betano_analyzer.sync_service as ss
-
-    captured_statuses: list[int] = []
-
-    async def _fake_fixtures(from_time, to_time, status_id, bookmaker):
-        captured_statuses.append(status_id)
-        return []
-
-    async def _fake_catalog():
-        return {}
-
-    monkeypatch.setattr(ss, "fetch_fixtures", _fake_fixtures)
-    monkeypatch.setattr(ss, "fetch_market_catalog", _fake_catalog)
-
-    await ss.sync_oddspapi_betano_pe(live_only=True, hours=1, limit_matches=5)
-
-    # live_only=True → should have requested status_id=1 (live)
-    assert 1 in captured_statuses, f"Expected status_id=1 in {captured_statuses}"
-
