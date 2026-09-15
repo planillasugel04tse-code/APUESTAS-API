@@ -17,6 +17,7 @@ from .oddspapi_analysis_api import router as oddspapi_analysis_router
 from .oddspapi_odds_api import router as oddspapi_odds_router
 from .oddspapi_scan_api import router as oddspapi_scan_router
 from .oddspapi_stats_api import router as oddspapi_stats_router
+from .provider_accounts import list_accounts
 from .provider_accounts_api import router as provider_accounts_router
 from .provider_accounts_panel import provider_accounts_page
 from .range_strategy_api import router as range_strategy_router
@@ -41,6 +42,14 @@ app = FastAPI(
     description="Plataforma de análisis de cuotas, value bets, surebets, tipsters y señales deportivas.",
     lifespan=lifespan,
 )
+
+
+def _oddspapi_connected() -> bool:
+    """Return whether a stored OddsPapi account is currently active."""
+    return any(
+        account.get("provider") == "oddspapi" and bool(account.get("active"))
+        for account in list_accounts()
+    )
 
 
 @app.middleware("http")
@@ -83,6 +92,8 @@ def health() -> dict[str, str]:
 
 @app.get("/", include_in_schema=False)
 def dashboard():
+    if not _oddspapi_connected():
+        return provider_accounts_page()
     return dashboard_response(date.today())
 
 
