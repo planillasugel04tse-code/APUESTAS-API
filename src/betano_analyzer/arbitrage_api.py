@@ -13,10 +13,30 @@ router = APIRouter(prefix="/api/v1/arbitrage", tags=["arbitrage"])
 Scope = Literal["all", "peru", "world"]
 
 
+def _dedupe_opportunities(opportunities):
+    """Collapse duplicate rows representing the same event/market/line/mode.
+
+    Match IDs can differ when the same fixture was ingested more than once.
+    Surebet is an event-level opportunity, so the API must expose one card per
+    normalized event instead of leaking storage duplicates to the UI.
+    """
+    unique = {}
+    for item in opportunities:
+        event = " ".join(str(item.match or "").strip().lower().split())
+        market = " ".join(str(item.market or "").strip().lower().split())
+        line = "" if item.line is None else str(item.line).strip()
+        key = (event, market, line, str(item.mode or "").lower())
+        current = unique.get(key)
+        if current is None or item.profit_margin > current.profit_margin:
+            unique[key] = item
+    return sorted(unique.values(), key=lambda x: x.profit_margin, reverse=True)
+
+
 def _result_payload(mode: str, opportunities, *, scope: str, league: str | None, **extra):
+    opportunities = _dedupe_opportunities(opportunities)
     items = [item.__dict__ for item in opportunities]
     leagues = sorted({str(item.competition).strip() for item in opportunities if item.competition})
-    return {"mode": mode, "scope": scope, "league": league, "leagues": leagues, "opportunities": items, **extra}
+    return {"mode": mode, "scope": scope, "league": league, "leagues": leagues, "opportunities": items, "count": len(items), **extra}
 
 
 @router.get("/pre-match")
@@ -38,9 +58,6 @@ async def live(
 ):
     """Refresh the live SureBet universe once, then apply the requested scope filter."""
     try:
-        # One grouped OddsPapi request per fixture covers the discovered
-        # bookmaker universe. SureBet classification decides whether each
-        # combination is eligible for Peru↔International or International↔International.
         sync = await sync_global_live(hours=hours, bookmaker_cap=20)
         refresh_scope = "world_universe"
     except (RuntimeError, ValueError) as exc:
