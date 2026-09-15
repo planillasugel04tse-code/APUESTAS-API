@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -80,18 +81,64 @@ def _statistical_enrichment(match_id: int, pick: TipsterPick) -> StatisticalEnri
     )
 
 
-def enrich_tipster_pick(match_id: int, pick: TipsterPick, evidence: StatisticalEvidence, *, max_age_minutes: int = 180) -> EnrichedTipsterResult:
+def _selection_line(selection: str) -> float | None:
+    """Extract a numeric total/handicap line from a transformed selection."""
+    match = re.search(r"(?:over|under|más de|mas de|menos de)\s*(-?\d+(?:\.\d+)?)", selection, re.I)
+    if match:
+        return float(match.group(1))
+    return None
+
+
+def enrich_tipster_pick(
+    match_id: int,
+    pick: TipsterPick,
+    evidence: StatisticalEvidence,
+    *,
+    max_age_minutes: int = 180,
+) -> EnrichedTipsterResult:
     """Attach fresh stored odds and historical statistics without external calls."""
-    original = _as_market_quote(best_market_quote(match_id, pick.market, pick.selection, line=pick.line, max_age_minutes=max_age_minutes))
+    original = _as_market_quote(
+        best_market_quote(
+            match_id,
+            pick.market,
+            pick.selection,
+            line=pick.line,
+            max_age_minutes=max_age_minutes,
+        )
+    )
+
     safer_candidate = safer_market(pick)
     safer = None
     if (safer_candidate.safer_market, safer_candidate.safer_selection) != (pick.market, pick.selection):
-        safer = _as_market_quote(best_market_quote(match_id, safer_candidate.safer_market, safer_candidate.safer_selection, max_age_minutes=max_age_minutes))
+        safer_line = _selection_line(safer_candidate.safer_selection)
+        safer = _as_market_quote(
+            best_market_quote(
+                match_id,
+                safer_candidate.safer_market,
+                safer_candidate.safer_selection,
+                line=safer_line,
+                max_age_minutes=max_age_minutes,
+            )
+        )
 
     statistics = _statistical_enrichment(match_id, pick)
     priced_pick = pick
     if original is not None:
-        priced_pick = TipsterPick(source=pick.source, source_type=pick.source_type, event=pick.event, market=pick.market, selection=pick.selection, odds=original.odds, line=pick.line, sport=pick.sport, league=pick.league, published_at=pick.published_at, raw_text=pick.raw_text, source_url=pick.source_url, confidence=pick.confidence)
+        priced_pick = TipsterPick(
+            source=pick.source,
+            source_type=pick.source_type,
+            event=pick.event,
+            market=pick.market,
+            selection=pick.selection,
+            odds=original.odds,
+            line=pick.line,
+            sport=pick.sport,
+            league=pick.league,
+            published_at=pick.published_at,
+            raw_text=pick.raw_text,
+            source_url=pick.source_url,
+            confidence=pick.confidence,
+        )
 
     enriched_evidence = evidence
     if statistics.selection_probability is not None and statistics.status == "OK":
@@ -106,24 +153,49 @@ def enrich_tipster_pick(match_id: int, pick: TipsterPick, evidence: StatisticalE
         )
     safer_odds = safer.odds if safer is not None else None
     analysis = analyze_pick(priced_pick, enriched_evidence, safer_odds=safer_odds)
-    return EnrichedTipsterResult(analysis=analysis, market=MarketEnrichment(original=original, safer=safer), statistics=statistics)
+    return EnrichedTipsterResult(
+        analysis=analysis,
+        market=MarketEnrichment(original=original, safer=safer),
+        statistics=statistics,
+    )
 
 
 def serialize_enriched(result: EnrichedTipsterResult) -> dict[str, Any]:
     analysis = result.analysis
     return {
         "analysis": {
-            "status": analysis.status, "probability": analysis.probability, "fair_odds": analysis.fair_odds,
-            "offered_odds": analysis.offered_odds, "edge": analysis.edge, "value_score": analysis.value_score,
-            "safety_score": analysis.safety_score, "rejection_reasons": list(analysis.rejection_reasons),
-            "pick": {"source": analysis.pick.source, "source_type": analysis.pick.source_type, "event": analysis.pick.event,
-                     "market": analysis.pick.market, "selection": analysis.pick.selection, "odds": analysis.pick.odds,
-                     "line": analysis.pick.line, "sport": analysis.pick.sport, "league": analysis.pick.league},
-            "safer": {"market": analysis.safer.safer_market, "selection": analysis.safer.safer_selection,
-                      "odds": analysis.safer.safer_odds, "edge": analysis.safer.safer_edge,
-                      "selected": analysis.safer.selected, "reason": analysis.safer.reason},
+            "status": analysis.status,
+            "probability": analysis.probability,
+            "fair_odds": analysis.fair_odds,
+            "offered_odds": analysis.offered_odds,
+            "edge": analysis.edge,
+            "value_score": analysis.value_score,
+            "safety_score": analysis.safety_score,
+            "rejection_reasons": list(analysis.rejection_reasons),
+            "pick": {
+                "source": analysis.pick.source,
+                "source_type": analysis.pick.source_type,
+                "event": analysis.pick.event,
+                "market": analysis.pick.market,
+                "selection": analysis.pick.selection,
+                "odds": analysis.pick.odds,
+                "line": analysis.pick.line,
+                "sport": analysis.pick.sport,
+                "league": analysis.pick.league,
+            },
+            "safer": {
+                "market": analysis.safer.safer_market,
+                "selection": analysis.safer.safer_selection,
+                "odds": analysis.safer.safer_odds,
+                "edge": analysis.safer.safer_edge,
+                "selected": analysis.safer.selected,
+                "reason": analysis.safer.reason,
+            },
         },
-        "market": {"original": _quote_dict(result.market.original), "safer": _quote_dict(result.market.safer)},
+        "market": {
+            "original": _quote_dict(result.market.original),
+            "safer": _quote_dict(result.market.safer),
+        },
         "statistics": asdict(result.statistics),
     }
 
@@ -131,5 +203,12 @@ def serialize_enriched(result: EnrichedTipsterResult) -> dict[str, Any]:
 def _quote_dict(quote: MarketQuote | None) -> dict[str, Any] | None:
     if quote is None:
         return None
-    return {"bookmaker": quote.bookmaker, "odds": quote.odds, "market": quote.market, "selection": quote.selection,
-            "line": quote.line, "captured_at": quote.captured_at, "age_seconds": round(quote.age_seconds, 1)}
+    return {
+        "bookmaker": quote.bookmaker,
+        "odds": quote.odds,
+        "market": quote.market,
+        "selection": quote.selection,
+        "line": quote.line,
+        "captured_at": quote.captured_at,
+        "age_seconds": round(quote.age_seconds, 1),
+    }
