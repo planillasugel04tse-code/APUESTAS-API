@@ -19,36 +19,34 @@ def test_pre_match_endpoint_uses_stored_odds_only(client):
     assert "opportunities" in body
 
 
-def test_live_peru_endpoint_keeps_provider_batching_internal(monkeypatch, client):
-    calls = {}
-
-    async def fake_sync(**kwargs):
-        calls.update(kwargs)
-        return SyncSummary(8, 0, 0, 0, 0, 0, 0)
-
-    monkeypatch.setattr("betano_analyzer.sync_service.sync_oddspapi_betano_pe", fake_sync)
-    response = client.post("/api/v1/arbitrage/live", params={"limit": 5, "hours": 1, "scope": "peru"})
-    assert response.status_code == 200
-    assert calls["include_live"] is True
-    assert calls["live_only"] is True
-    assert calls["hours"] == 1
-    assert calls["limit_matches"] == 20
-    assert response.json()["refresh_scope"] == "peru"
-
-
-def test_live_world_endpoint_hides_match_batch_limit(monkeypatch, client):
+def test_live_endpoint_refreshes_global_universe_for_any_scope(monkeypatch, client):
     calls = {}
 
     async def fake_global(**kwargs):
         calls.update(kwargs)
-        return type("Summary", (), {"__dict__": {"bookmakers_discovered": 12, "bookmakers_selected": 10, "fixtures_seen": 45, "fixtures_saved": 45, "odds_seen": 20, "odds_saved": 20, "bookmaker_cap": 10, "scope": "world", "sport": "football"}})()
+        return type("Summary", (), {"__dict__": {"bookmakers_discovered": 12, "bookmakers_selected": 12, "fixtures_seen": 20, "fixtures_saved": 20, "odds_seen": 60, "odds_saved": 60, "bookmaker_cap": 20, "scope": "world", "sport": "football"}})()
+
+    monkeypatch.setattr("betano_analyzer.arbitrage_api.sync_global_live", fake_global)
+    monkeypatch.setattr("betano_analyzer.arbitrage_api.find_arbitrage", lambda *a, **kw: [])
+    response = client.post("/api/v1/arbitrage/live", params={"limit": 5, "hours": 1, "scope": "peru"})
+    assert response.status_code == 200
+    assert calls == {"hours": 1, "bookmaker_cap": 20}
+    assert response.json()["refresh_scope"] == "world_universe"
+
+
+def test_live_world_endpoint_uses_full_bookmaker_cap(monkeypatch, client):
+    calls = {}
+
+    async def fake_global(**kwargs):
+        calls.update(kwargs)
+        return type("Summary", (), {"__dict__": {"bookmakers_discovered": 12, "bookmakers_selected": 12, "fixtures_seen": 45, "fixtures_saved": 45, "odds_seen": 20, "odds_saved": 20, "bookmaker_cap": 20, "scope": "world", "sport": "football"}})()
 
     monkeypatch.setattr("betano_analyzer.arbitrage_api.sync_global_live", fake_global)
     monkeypatch.setattr("betano_analyzer.arbitrage_api.find_arbitrage", lambda *a, **kw: [])
     response = client.post("/api/v1/arbitrage/live", params={"limit": 5, "hours": 1, "scope": "world"})
     assert response.status_code == 200
-    assert calls == {"hours": 1, "bookmaker_cap": 10}
-    assert response.json()["refresh_scope"] == "world"
+    assert calls == {"hours": 1, "bookmaker_cap": 20}
+    assert response.json()["refresh_scope"] == "world_universe"
     assert response.json()["sync"]["fixtures_saved"] == 45
 
 
