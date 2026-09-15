@@ -3,7 +3,8 @@ from pydantic import BaseModel
 
 from .telegram.backtest import evaluate_telegram_backtest
 from .telegram.config import load_telegram_config
-from .telegram.service import process_telegram_signal, retry_pending_matches
+from .telegram.full_pipeline import process_telegram_signal_full
+from .telegram.service import retry_pending_matches
 
 router = APIRouter(prefix="/api/v1/telegram", tags=["telegram"])
 
@@ -17,9 +18,9 @@ class TelegramMessage(BaseModel):
 
 @router.post("/signals")
 def ingest_telegram_signal(data: TelegramMessage):
-    """Process a Telegram tipster message through the full analysis pipeline."""
+    """Process a Telegram tipster message through the canonical full pipeline."""
     try:
-        return process_telegram_signal(
+        return process_telegram_signal_full(
             data.text, channel=data.channel, message_id=data.message_id, tipster=data.tipster
         )
     except ValueError as exc:
