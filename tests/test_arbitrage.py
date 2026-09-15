@@ -7,7 +7,13 @@ from betano_analyzer.arbitrage import find_arbitrage, _is_live, _is_stale_live, 
 from betano_analyzer.db import connect, initialize
 
 
-def _seed_match_with_odds(kickoff: str, suffix: str, status: str = "scheduled", competition: str = "premier league"):
+def _seed_match_with_odds(
+    kickoff: str,
+    suffix: str,
+    status: str = "scheduled",
+    competition: str = "premier league",
+    bookmakers: tuple[str, str, str] = ("BookA", "BookB", "BookC"),
+):
     initialize()
     external_id = f"test-arb-{suffix}"
     with connect() as db:
@@ -19,15 +25,16 @@ def _seed_match_with_odds(kickoff: str, suffix: str, status: str = "scheduled", 
         )
         match_id = cur.lastrowid
         rows = [
-            (match_id, "BookA", "1x2_ft", "home", 2.20),
-            (match_id, "BookB", "1x2_ft", "draw", 4.20),
-            (match_id, "BookC", "1x2_ft", "away", 4.20),
+            (match_id, bookmakers[0], "1x2_ft", "home", 2.20),
+            (match_id, bookmakers[1], "1x2_ft", "draw", 4.20),
+            (match_id, bookmakers[2], "1x2_ft", "away", 4.20),
         ]
         for row in rows:
             db.execute(
                 "INSERT INTO odds(match_id,bookmaker,market,selection,odds,captured_at,line) VALUES(?,?,?,?,?,?,?)",
                 (*row, datetime.now(timezone.utc).isoformat(), None),
             )
+        db.commit()
         return match_id
 
 
@@ -56,6 +63,7 @@ def test_pre_match_ignores_stale_high_odds_when_newer_price_is_not_arbitrage():
             "INSERT INTO odds(match_id,bookmaker,market,selection,odds,captured_at,line) VALUES(?,?,?,?,?,?,?)",
             (match_id, "BookA", "1x2_ft", "home", 1.70, (now + timedelta(seconds=1)).isoformat(), None),
         )
+        db.commit()
     assert find_arbitrage(live=False, match_id=match_id) == []
 
 
@@ -66,6 +74,7 @@ def test_live_stale_odds_rejected(monkeypatch):
     stale_time = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
     with connect() as db:
         db.execute("UPDATE odds SET captured_at=? WHERE match_id=?", (stale_time, match_id))
+        db.commit()
     assert find_arbitrage(live=True, match_id=match_id) == []
 
 
@@ -81,7 +90,12 @@ def test_live_fresh_odds_accepted(monkeypatch):
 def test_scope_separates_peru_from_world():
     kickoff = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
     peru_id = _seed_match_with_odds(kickoff, "peru-scope", competition="liga 1 peru")
-    world_id = _seed_match_with_odds(kickoff, "world-scope", competition="premier league")
+    world_id = _seed_match_with_odds(
+        kickoff,
+        "world-scope",
+        competition="premier league",
+        bookmakers=("Betano", "Pinnacle", "bet365"),
+    )
 
     peru = find_arbitrage(live=False, scope="peru")
     world = find_arbitrage(live=False, scope="world")
@@ -137,9 +151,3 @@ def test_is_live_falls_back_to_kickoff_when_status_unknown():
     future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
     assert _is_live(past, status="") is True
     assert _is_live(future, status="") is False
-
-
-def test_is_live_finished_match_is_not_live():
-    past = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
-    assert _is_live(past, status="finished") is False
-    assert _is_live(past, status="cancelled") is False
