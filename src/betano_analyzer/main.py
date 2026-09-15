@@ -15,7 +15,7 @@ from .oddspapi_analysis_api import router as oddspapi_analysis_router
 from .oddspapi_odds_api import router as oddspapi_odds_router
 from .oddspapi_scan_api import router as oddspapi_scan_router
 from .oddspapi_stats_api import router as oddspapi_stats_router
-from .provider_accounts import active_account
+from .provider_accounts import active_account, clear_session
 from .provider_accounts_api import router as provider_accounts_router
 from .provider_accounts_panel import provider_accounts_page
 from .range_strategy_api import router as range_strategy_router
@@ -29,7 +29,9 @@ from .branding import apply_product_branding
 
 @asynccontextmanager
 async def lifespan(app:FastAPI):
-    initialize(); yield
+    # Any key that may have existed in an older local environment is discarded
+    # before the first request. The current session must explicitly reconnect.
+    clear_session(); initialize(); yield; clear_session()
 
 app=FastAPI(title='ANALISYS BETSTOTAL',version='0.1.0',description='Plataforma de análisis de cuotas, value bets, surebets, tipsters y señales deportivas.',lifespan=lifespan)
 
@@ -52,18 +54,13 @@ def health()->dict[str,str]: return {'status':'ok','service':'analysis-betstotal
 
 @app.get('/',include_in_schema=False)
 def dashboard(): return dashboard_response(date.today()) if _provider_connected() else provider_accounts_page()
-
 @app.get('/panel',include_in_schema=False)
 def control_panel(): return control_panel_with_provider_accounts()
-
 @app.get('/bookmakers',include_in_schema=False)
 def bookmakers_panel(): return bookmakers_panel_page()
-
 @app.get('/provider-accounts',include_in_schema=False)
 def provider_accounts(): return provider_accounts_page()
-
 @app.get('/telegram-test',include_in_schema=False)
 def telegram_test(): return telegram_test_page()
-
 @app.get('/tipsters',include_in_schema=False)
 def tipsters_panel(): return tipster_panel_page()
