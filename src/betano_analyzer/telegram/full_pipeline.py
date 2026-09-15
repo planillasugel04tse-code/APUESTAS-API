@@ -6,7 +6,43 @@ from ..db import connect
 from ..tipster_intelligence import StatisticalEvidence, TipsterPick
 from ..tipster_pipeline import enrich_tipster_pick, serialize_enriched
 from .parser import parse_telegram_message
-from .service import process_telegram_signal
+from .service import process_telegram_signal, retry_pending_matches
+
+
+def _pick_from_raw(raw_text: str, *, channel: str, tipster: str | None) -> TipsterPick | None:
+    parsed = parse_telegram_message(raw_text, channel=channel, tipster=tipster)
+    if not parsed.is_valid:
+        return None
+    return TipsterPick(
+        source=parsed.tipster or tipster or channel,
+        source_type="telegram",
+        event=f"{parsed.home_team} vs {parsed.away_team}",
+        market=parsed.market,
+        selection=parsed.selection,
+        odds=parsed.odds,
+        line=parsed.line,
+        sport=parsed.sport,
+        league=parsed.competition,
+        published_at=parsed.published_at,
+        raw_text=raw_text,
+        confidence=parsed.confidence,
+    )
+
+
+def _enrich_signal_row(row, *, max_age_minutes: int) -> dict | None:
+    pick = _pick_from_raw(
+        row["raw_text"], channel=str(row["channel"]), tipster=row["tipster"]
+    )
+    if pick is None or row["matched_event_id"] is None:
+        return None
+    return serialize_enriched(
+        enrich_tipster_pick(
+            int(row["matched_event_id"]),
+            pick,
+            StatisticalEvidence(),
+            max_age_minutes=max_age_minutes,
+        )
+    )
 
 
 def process_telegram_signal_full(
@@ -35,27 +71,12 @@ def process_telegram_signal_full(
     if match_id is None:
         return result
 
-    parsed = parse_telegram_message(raw_text, channel=channel, tipster=tipster)
-    if not parsed.is_valid:
+    pick = _pick_from_raw(raw_text, channel=channel, tipster=tipster)
+    if pick is None:
         return result
 
-    pick = TipsterPick(
-        source=parsed.tipster or tipster or channel,
-        source_type="telegram",
-        event=f"{parsed.home_team} vs {parsed.away_team}",
-        market=parsed.market,
-        selection=parsed.selection,
-        odds=parsed.odds,
-        line=parsed.line,
-        sport=parsed.sport,
-        league=parsed.competition,
-        published_at=parsed.published_at,
-        raw_text=raw_text,
-        confidence=parsed.confidence,
-    )
-    evidence = StatisticalEvidence()
     enriched = enrich_tipster_pick(
-        int(match_id), pick, evidence, max_age_minutes=max_age_minutes
+        int(match_id), pick, StatisticalEvidence(), max_age_minutes=max_age_minutes
     )
     serialized = serialize_enriched(enriched)
 
@@ -82,3 +103,37 @@ def process_telegram_signal_full(
     analysis["tipster_pipeline"] = serialized
     result["analysis"] = analysis
     return result
+
+
+def retry_pending_matches_full(*, max_age_minutes: int = 180) -> dict:
+    """Retry matching and enrich every signal resolved by that retry."""
+    summary = retry_pending_matches()
+    if summary.get("resolved", 0) <= 0:
+        return summary
+
+    enriched_count = 0
+    with connect() as db:
+        rows = db.execute(
+            """SELECT * FROM telegram_signals
+               WHERE match_status='matched'
+                 AND analysis_result LIKE '%matched_via_retry%'
+               ORDER BY created_at"""
+        ).fetchall()
+        for row in rows:
+            serialized = _enrich_signal_row(row, max_age_minutes=max_age_minutes)
+            if serialized is None:
+                continue
+            analysis: dict = {}
+            try:
+                analysis = json.loads(row["analysis_result"] or "{}")
+            except (TypeError, json.JSONDecodeError):
+                pass
+            analysis["tipster_pipeline"] = serialized
+            db.execute(
+                "UPDATE telegram_signals SET analysis_result=? WHERE signal_id=?",
+                (json.dumps(analysis, ensure_ascii=False), row["signal_id"]),
+            )
+            enriched_count += 1
+        db.commit()
+
+    return {**summary, "enriched": enriched_count}
