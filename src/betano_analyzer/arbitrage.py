@@ -32,57 +32,40 @@ class Arbitrage:
 
 def _integer_stake_plan(outcomes: dict[str, dict[str, object]], target_profit: int) -> dict[str, object]:
     """Find integer stakes whose guaranteed profit is at least target_profit."""
-    if target_profit <= 0 or not outcomes:
-        raise ValueError("target_profit must be positive and outcomes cannot be empty")
+    if target_profit <= 0 or not outcomes: raise ValueError("target_profit must be positive and outcomes cannot be empty")
     odds = {key: float(value["odds"]) for key, value in outcomes.items()}
-    if any(price <= 1 for price in odds.values()):
-        raise ValueError("all odds must be > 1")
+    if any(price <= 1 for price in odds.values()): raise ValueError("all odds must be > 1")
     implied_sum = sum(1.0 / price for price in odds.values())
-    if implied_sum >= 1:
-        raise ValueError("not a surebet")
-    ideal_total = target_profit / ((1.0 / implied_sum) - 1.0)
-    total = max(1, int(ideal_total))
+    if implied_sum >= 1: raise ValueError("not a surebet")
+    ideal_total = target_profit / ((1.0 / implied_sum) - 1.0); total = max(1, int(ideal_total))
     while True:
         ideal = {key: total * (1.0 / price) / implied_sum for key, price in odds.items()}
-        stakes = {key: max(1, int(round(value))) for key, value in ideal.items()}
-        diff = total - sum(stakes.values())
-        order = sorted(stakes, key=lambda key: ideal[key] - stakes[key], reverse=diff > 0)
-        step = 1 if diff > 0 else -1
+        stakes = {key: max(1, int(round(value))) for key, value in ideal.items()}; diff = total - sum(stakes.values())
+        order = sorted(stakes, key=lambda key: ideal[key] - stakes[key], reverse=diff > 0); step = 1 if diff > 0 else -1
         for key in order[:abs(diff)]:
-            if step > 0 or stakes[key] > 1:
-                stakes[key] += step
-        actual_total = sum(stakes.values())
-        returns = {key: int(stakes[key] * odds[key]) for key in stakes}
-        guaranteed_return = min(returns.values())
-        guaranteed_profit = guaranteed_return - actual_total
+            if step > 0 or stakes[key] > 1: stakes[key] += step
+        actual_total = sum(stakes.values()); returns = {key: int(stakes[key] * odds[key]) for key in stakes}
+        guaranteed_return = min(returns.values()); guaranteed_profit = guaranteed_return - actual_total
         if guaranteed_profit >= target_profit:
-            roi = int((guaranteed_profit / actual_total) * 100)
-            return {"stakes": stakes, "total_stake": actual_total, "total_return": guaranteed_return, "guaranteed_profit": guaranteed_profit, "roi_percent": roi, "implied_sum": implied_sum}
+            return {"stakes": stakes, "total_stake": actual_total, "total_return": guaranteed_return, "guaranteed_profit": guaranteed_profit, "roi_percent": int((guaranteed_profit / actual_total) * 100), "implied_sum": implied_sum}
         total += 1
 
 
 def calculate_stakes(outcomes: dict[str, dict[str, object]], total_stake: float) -> dict[str, object]:
     """Return an integer-stake plan for a fixed bankroll."""
-    if total_stake <= 0 or not outcomes:
-        raise ValueError("total_stake must be positive and outcomes cannot be empty")
+    if total_stake <= 0 or not outcomes: raise ValueError("total_stake must be positive and outcomes cannot be empty")
     odds = {key: float(value["odds"]) for key, value in outcomes.items()}
-    if any(price <= 1 for price in odds.values()):
-        raise ValueError("all odds must be > 1")
+    if any(price <= 1 for price in odds.values()): raise ValueError("all odds must be > 1")
     implied_sum = sum(1.0 / price for price in odds.values())
-    if implied_sum >= 1:
-        raise ValueError("not a surebet")
-    total = max(1, int(round(total_stake)))
-    ideal = {key: total * (1.0 / price) / implied_sum for key, price in odds.items()}
-    stakes = {key: max(1, int(round(value))) for key, value in ideal.items()}
-    diff = total - sum(stakes.values())
+    if implied_sum >= 1: raise ValueError("not a surebet")
+    total = max(1, int(round(total_stake))); ideal = {key: total * (1.0 / price) / implied_sum for key, price in odds.items()}
+    stakes = {key: max(1, int(round(value))) for key, value in ideal.items()}; diff = total - sum(stakes.values())
     if diff > 0:
         for key in sorted(stakes, key=lambda k: ideal[k] - stakes[k], reverse=True)[:diff]: stakes[key] += 1
     elif diff < 0:
         for key in sorted(stakes, key=lambda k: ideal[k] - stakes[k])[:abs(diff)]:
             if stakes[key] > 1: stakes[key] -= 1
-    actual_total = sum(stakes.values())
-    guaranteed_return = min(int(stakes[key] * odds[key]) for key in stakes)
-    profit = guaranteed_return - actual_total
+    actual_total = sum(stakes.values()); guaranteed_return = min(int(stakes[key] * odds[key]) for key in stakes); profit = guaranteed_return - actual_total
     return {"stakes": stakes, "total_stake": actual_total, "total_return": guaranteed_return, "guaranteed_profit": profit, "roi_percent": int((profit / actual_total) * 100), "implied_sum": implied_sum}
 
 
@@ -98,12 +81,10 @@ def _live_stale_minutes() -> int:
 def _is_live(kickoff: object, now: datetime | None = None, status: object | None = None) -> bool:
     status_key = str(status or "").strip().lower()
     if status_key in {"live", "in_play", "inplay", "started"}: return True
-    if status_key in {"scheduled", "pre_match", "prematch", "upcoming"}: return False
-    if status_key in {"finished", "ended", "cancelled", "canceled", "postponed"}: return False
+    if status_key in {"scheduled", "pre_match", "prematch", "upcoming", "finished", "ended", "cancelled", "canceled", "postponed"}: return False
     now = now or datetime.now(timezone.utc)
     try:
-        value = datetime.fromisoformat(str(kickoff).replace("Z", "+00:00"))
-        if value.tzinfo is None: value = value.replace(tzinfo=timezone.utc)
+        value = datetime.fromisoformat(str(kickoff).replace("Z", "+00:00")); value = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
         return value <= now
     except (TypeError, ValueError): return False
 
@@ -115,29 +96,22 @@ def _market_base(market: object) -> str:
     return text
 
 
-def _selection_key(selection: object) -> str:
-    return str(selection or "").strip().lower().split(":", 1)[-1].strip()
+def _selection_key(selection: object) -> str: return str(selection or "").strip().lower().split(":", 1)[-1].strip()
 
 
 def _captured_at(value: object) -> datetime | None:
     try:
-        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        if parsed.tzinfo is None: parsed = parsed.replace(tzinfo=timezone.utc)
-        return parsed
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00")); return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
     except (TypeError, ValueError): return None
 
 
 def _is_stale_live(value: object, now: datetime, stale_minutes: int) -> bool:
-    timestamp = _captured_at(value)
-    return timestamp is None or (now - timestamp) > timedelta(minutes=stale_minutes)
+    timestamp = _captured_at(value); return timestamp is None or (now - timestamp) > timedelta(minutes=stale_minutes)
 
 
-def _normalize_text(value: object) -> str:
-    return " ".join(str(value or "").strip().lower().replace("_", " ").split())
+def _normalize_text(value: object) -> str: return " ".join(str(value or "").strip().lower().replace("_", " ").split())
 
-
-def _normalize_bookmaker(value: object) -> str:
-    return "".join(ch for ch in _normalize_text(value) if ch.isalnum())
+def _normalize_bookmaker(value: object) -> str: return "".join(ch for ch in _normalize_text(value) if ch.isalnum())
 
 PERU_BOOKMAKER_KEYS = frozenset(_normalize_bookmaker(value) for row in PERU_BOOKMAKER_REGISTRY for value in (row.get("brand"), row.get("domain"), row.get("oddspapi_slug")))
 CANDIDATE_BOOKMAKER_KEYS = frozenset(_normalize_bookmaker(value) for row in PERU_BOOKMAKER_CANDIDATES for value in (row.get("brand"), row.get("domain"), row.get("oddspapi_slug")))
@@ -152,9 +126,7 @@ def classify_bookmaker(bookmaker: object) -> str:
     return "UNKNOWN"
 
 
-def _is_peru_bookmaker(bookmaker: object) -> bool:
-    return classify_bookmaker(bookmaker) == "PERU"
-
+def _is_peru_bookmaker(bookmaker: object) -> bool: return classify_bookmaker(bookmaker) == "PERU"
 
 def _world_bookmaker_mix(selected: dict[str, tuple[str, float]]) -> str:
     classes = {classify_bookmaker(value[0]) for value in selected.values()}
@@ -166,18 +138,15 @@ def _world_bookmaker_mix(selected: dict[str, tuple[str, float]]) -> str:
 
 
 def _valid_world_bookmaker_mix(selected: dict[str, tuple[str, float]]) -> bool:
-    if len({quote[0] for quote in selected.values()}) < 2:
-        return False
+    if len({quote[0] for quote in selected.values()}) < 2: return False
     return _world_bookmaker_mix(selected) in {"PERU + INTERNATIONAL", "INTERNATIONAL + INTERNATIONAL"}
 
 
 def _is_peru_competition(competition: object) -> bool:
-    text = _normalize_text(competition)
-    return any(keyword in text for keyword in PERU_LEAGUE_KEYWORDS)
+    text = _normalize_text(competition); return any(keyword in text for keyword in PERU_LEAGUE_KEYWORDS)
 
 
-def _scope_for_competition(competition: object) -> str:
-    return "peru" if _is_peru_competition(competition) else "world"
+def _scope_for_competition(competition: object) -> str: return "peru" if _is_peru_competition(competition) else "world"
 
 
 def _scope_matches(scope: str, competition: object) -> bool:
@@ -186,8 +155,7 @@ def _scope_matches(scope: str, competition: object) -> bool:
     return normalized == "all" or _scope_for_competition(competition) == normalized
 
 
-def _league_matches(league: str | None, competition: object) -> bool:
-    return not league or _normalize_text(league) in _normalize_text(competition)
+def _league_matches(league: str | None, competition: object) -> bool: return not league or _normalize_text(league) in _normalize_text(competition)
 
 
 def find_arbitrage(limit: int = 100, *, live: bool = False, match_id: int | None = None, scope: str = "all", league: str | None = None, total_stake: float | None = None) -> list[Arbitrage]:
@@ -222,14 +190,16 @@ def find_arbitrage(limit: int = 100, *, live: bool = False, match_id: int | None
         elif base_market in {"spread", "handicap", "asian_handicap"}: required = {"home", "away"}
         else: continue
         if not required.issubset(best): continue
-        selected = {key: best[key] for key in required}
-        mix = _world_bookmaker_mix(selected)
+        selected = {key: best[key] for key in required}; mix = _world_bookmaker_mix(selected)
+        # Peru mode is strictly Peru bookmakers; World mode allows only the
+        # approved Peru+international or international+international mixes.
+        if normalized_scope == "peru" and any(classify_bookmaker(q[0]) != "PERU" for q in selected.values()): continue
         if normalized_scope == "world" and not _valid_world_bookmaker_mix(selected): continue
         implied_sum = sum(1.0 / quote[1] for quote in selected.values())
         if implied_sum >= 1.0: continue
         competition = quotes[0]["competition"] or ""
         stake_data = calculate_stakes({key: {"odds": quote[1]} for key, quote in selected.items()}, total_stake) if total_stake else None
         target_data = build_target_profit_plans({key: {"odds": quote[1]} for key, quote in selected.items()})
-        result.append(Arbitrage(match_id=current_match_id, match=f"{quotes[0]['home_team']} vs {quotes[0]['away_team']}", market=market, line=line, outcomes={key: {"bookmaker": quote[0], "odds": quote[1], "classification": classify_bookmaker(quote[0])} for key, quote in selected.items()}, implied_sum=implied_sum, profit_margin=(1.0 / implied_sum) - 1.0, mode="live" if live else "pre_match", competition=competition, scope=_scope_for_competition(competition), bookmaker_mix=mix, total_stake=stake_data["total_stake"] if stake_data else None, total_return=stake_data["total_return"] if stake_data else None, guaranteed_profit=stake_data["guaranteed_profit"] if stake_data else None, roi_percent=stake_data["roi_percent"] if stake_data else None, target_profits=target_data))
+        result.append(Arbitrage(match_id=current_match_id, match=f"{quotes[0]['home_team']} vs {quotes[0]['away_team']}", market=market, line=line, outcomes={key: {"bookmaker": quote[0], "odds": quote[1], "classification": classify_bookmaker(quote[0])} for key, quote in selected.items()}, implied_sum=implied_sum, profit_margin=(1.0 / implied_sum) - 1.0, mode="live" if live else "pre_match", competition=competition, scope="peru" if normalized_scope == "peru" else _scope_for_competition(competition), bookmaker_mix=mix, total_stake=stake_data["total_stake"] if stake_data else None, total_return=stake_data["total_return"] if stake_data else None, guaranteed_profit=stake_data["guaranteed_profit"] if stake_data else None, roi_percent=stake_data["roi_percent"] if stake_data else None, target_profits=target_data))
         if len(result) >= limit: break
     return result
