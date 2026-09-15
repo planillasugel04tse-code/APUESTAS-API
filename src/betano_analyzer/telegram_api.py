@@ -3,8 +3,7 @@ from pydantic import BaseModel
 
 from .telegram.backtest import evaluate_telegram_backtest
 from .telegram.config import load_telegram_config
-from .telegram.full_pipeline import process_telegram_signal_full
-from .telegram.service import retry_pending_matches
+from .telegram.full_pipeline import process_telegram_signal_full, retry_pending_matches_full
 
 router = APIRouter(prefix="/api/v1/telegram", tags=["telegram"])
 
@@ -58,9 +57,9 @@ def telegram_config_status():
 
 @router.post("/retry-pending")
 def retry_pending():
-    """Re-attempt event matching for all signals still in 'pending_match'."""
+    """Re-match pending Telegram signals and run full tipster enrichment on resolved ones."""
     try:
-        return retry_pending_matches()
+        return retry_pending_matches_full()
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
