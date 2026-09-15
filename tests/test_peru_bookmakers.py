@@ -3,7 +3,7 @@ from betano_analyzer.peru_bookmakers import registry_slugs
 
 
 def test_peru_registry_uses_exact_oddspapi_slugs():
-    assert registry_slugs() == ["betano.pe", "apuestatotal", "inkabet"]
+    assert registry_slugs() == ["betano.pe", "apuestatotal", "inkabet", "bet365"]
 
 
 def test_oddspapi_v4_bookmakers_shape_is_normalized():
