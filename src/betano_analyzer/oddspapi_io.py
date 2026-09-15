@@ -186,7 +186,9 @@ def parse_odds(payload: dict[str, Any], *, bookmaker: str = ODDSPAPI_BETANO_PE, 
                 except (KeyError, TypeError, ValueError): continue
                 if price <= 1: continue
                 outcome_key = player.get("bookmakerOutcomeId") or selection_name
-                line = _line_from_outcome_id(outcome_key) or catalog_line
+                # Prefer the canonical market line. Parsing arbitrary numeric
+                # fragments from outcome IDs can turn an ID into a fake handicap.
+                line = catalog_line if catalog_line is not None else _line_from_outcome_id(outcome_key)
                 selection = selection_name if not player.get("playerName") else f"{selection_name}:{player['playerName']}"
                 canonical_market, canonical_selection = _canonical_market(market_name, market_type, period, selection)
                 rows.append(NormalizedOdd(str(fixture_id), bookmaker, canonical_market, canonical_selection, price, _iso(player.get("changedAt")) if player.get("changedAt") else captured, line))
