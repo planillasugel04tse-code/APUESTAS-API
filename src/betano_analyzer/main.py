@@ -24,13 +24,11 @@ from .telegram_api import router as telegram_router
 from .telegram_test_web import telegram_test_page
 from .tipster_api import router as tipster_router
 from .tipster_panel import tipster_panel_page
-from .web_surebet_patch import dashboard_response
+from .web_ui_fixed import dashboard_fixed, surebet_page
 from .branding import apply_product_branding
 
 @asynccontextmanager
 async def lifespan(app:FastAPI):
-    # Any key that may have existed in an older local environment is discarded
-    # before the first request. The current session must explicitly reconnect.
     clear_session(); initialize(); yield; clear_session()
 
 app=FastAPI(title='ANALISYS BETSTOTAL',version='0.1.0',description='Plataforma de análisis de cuotas, value bets, surebets, tipsters y señales deportivas.',lifespan=lifespan)
@@ -53,7 +51,9 @@ app.include_router(router);app.include_router(arbitrage_router);app.include_rout
 def health()->dict[str,str]: return {'status':'ok','service':'analysis-betstotal'}
 
 @app.get('/',include_in_schema=False)
-def dashboard(): return dashboard_response(date.today()) if _provider_connected() else provider_accounts_page()
+def dashboard(): return dashboard_fixed(date.today()) if _provider_connected() else provider_accounts_page()
+@app.get('/surebet',include_in_schema=False)
+def surebet(): return surebet_page() if _provider_connected() else provider_accounts_page()
 @app.get('/panel',include_in_schema=False)
 def control_panel(): return control_panel_with_provider_accounts()
 @app.get('/bookmakers',include_in_schema=False)
