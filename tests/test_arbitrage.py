@@ -89,7 +89,13 @@ def test_live_fresh_odds_accepted(monkeypatch):
 
 def test_scope_separates_peru_from_world():
     kickoff = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
-    peru_id = _seed_match_with_odds(kickoff, "peru-scope", competition="liga 1 peru")
+    # Peru scope must contain only bookmakers classified as PERU.
+    peru_id = _seed_match_with_odds(
+        kickoff,
+        "peru-scope",
+        competition="liga 1 peru",
+        bookmakers=("Betano", "Apuesta Total", "Inkabet"),
+    )
     world_id = _seed_match_with_odds(
         kickoff,
         "world-scope",
@@ -111,12 +117,23 @@ def test_scope_separates_peru_from_world():
     assert peru_item.scope == "peru"
     assert world_item.scope == "world"
     assert peru_item.competition == "liga 1 peru"
+    assert all(item["classification"] == "PERU" for item in peru_item.outcomes.values())
 
 
 def test_league_filter_returns_only_selected_league():
     kickoff = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
-    liga1_id = _seed_match_with_odds(kickoff, "league-1", competition="liga 1 peru")
-    liga2_id = _seed_match_with_odds(kickoff, "league-2", competition="liga 2 peru")
+    liga1_id = _seed_match_with_odds(
+        kickoff,
+        "league-1",
+        competition="liga 1 peru",
+        bookmakers=("Betano", "Apuesta Total", "Inkabet"),
+    )
+    liga2_id = _seed_match_with_odds(
+        kickoff,
+        "league-2",
+        competition="liga 2 peru",
+        bookmakers=("Betano", "Apuesta Total", "Inkabet"),
+    )
     result = find_arbitrage(live=False, scope="peru", league="liga 1")
     ids = {item.match_id for item in result}
     assert liga1_id in ids
