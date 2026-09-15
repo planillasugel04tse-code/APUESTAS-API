@@ -8,10 +8,11 @@ PERU_BOOKMAKER_REGISTRY: tuple[dict[str, Any], ...] = (
     {"brand": "Betano", "domain": "betano.pe", "oddspapi_slug": "betano.pe", "legal_status": "verified_register_2026-09"},
     {"brand": "Apuesta Total", "domain": "apuestatotal.com", "oddspapi_slug": "apuestatotal", "legal_status": "verified_register_2026-09"},
     {"brand": "Inkabet", "domain": "inkabet.pe", "oddspapi_slug": "inkabet", "legal_status": "verified_register_2026-09"},
+    # Verified from bet365's current Peru site/licensing information.
+    {"brand": "Bet365", "domain": "bet365.pe", "oddspapi_slug": "bet365", "legal_status": "verified_peru_2026-09"},
 )
 
 PERU_BOOKMAKER_CANDIDATES: tuple[dict[str, Any], ...] = (
-    {"brand": "Bet365", "domain": "bet365.com", "oddspapi_slug": "bet365", "legal_status": "candidate"},
     {"brand": "Betsson", "domain": "betsson.com", "oddspapi_slug": "betsson", "legal_status": "candidate"},
     {"brand": "Betcris", "domain": "betcris.com", "oddspapi_slug": "betcris", "legal_status": "candidate"},
     {"brand": "Te Apuesto", "domain": "teapuesto.com", "oddspapi_slug": "teapuesto", "legal_status": "candidate"},
