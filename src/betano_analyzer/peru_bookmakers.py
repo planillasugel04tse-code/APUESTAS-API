@@ -26,8 +26,9 @@ PERU_BOOKMAKER_CANDIDATES: tuple[dict[str, Any], ...] = (
     {"brand": "Pin-Up", "domain": "pin-up.bet", "oddspapi_slug": "pin-up", "legal_status": "candidate"},
 )
 
-# Requested additional sharp bookmaker. It is not classified as Peruvian.
-SUREBET_EXTRA_BOOKMAKERS: tuple[str, ...] = ("pinnacle",)
+# Additional international bookmakers used by the world SureBet engine.
+# These are explicitly NOT classified as Peruvian.
+SUREBET_EXTRA_BOOKMAKERS: tuple[str, ...] = ("pinnacle", "betfair")
 
 
 def registry_rows() -> list[dict[str, Any]]:
