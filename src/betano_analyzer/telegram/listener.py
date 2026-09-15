@@ -6,7 +6,7 @@ import logging
 from telethon import TelegramClient, events
 
 from .config import load_telegram_config
-from .service import process_telegram_signal
+from .full_pipeline import process_telegram_signal_full
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ def build_client() -> TelegramClient:
 
 
 async def run_listener() -> None:
-    """Listen to configured Telegram channels and feed messages into the analyzer.
+    """Listen to configured Telegram channels and feed messages into the full analyzer.
 
     The listener only reads messages and stores them through the existing
     Telegram analysis pipeline. It does not send messages, place bets, or
@@ -56,7 +56,9 @@ async def run_listener() -> None:
         channel_name = getattr(chat, "username", None) or getattr(chat, "title", None) or str(event.chat_id)
         message_id = str(event.id)
         try:
-            result = process_telegram_signal(text, channel=str(channel_name), message_id=message_id)
+            result = process_telegram_signal_full(
+                text, channel=str(channel_name), message_id=message_id
+            )
             logger.info("Telegram signal %s processed: %s", message_id, result.get("status"))
         except Exception:
             logger.exception("Telegram signal %s failed", message_id)
