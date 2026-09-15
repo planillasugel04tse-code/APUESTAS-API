@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from .oddspapi_history import hydrate_match_history
 from .statistical_engine import TeamMatch, build_report, probability_for_selection, serialize_report
 from .team_statistics import build_match_probability, build_team_report, record_history
 
@@ -75,3 +76,19 @@ def match_statistics(home_team: str, away_team: str, market: str, selection: str
     limit = max(1, min(limit, 100))
     min_sample = max(1, min(min_sample, 100))
     return build_match_probability(home_team, away_team, market, selection, limit=limit, min_sample=min_sample)
+
+
+@router.post("/hydrate/{match_id}")
+async def hydrate_statistics(
+    match_id: int,
+    max_matches: int = Query(default=6, ge=1, le=10),
+    max_requests: int = Query(default=16, ge=3, le=30),
+) -> dict[str, Any]:
+    """Import recent finished team results from OddsPapi, within a hard budget."""
+    try:
+        summary = await hydrate_match_history(match_id, max_matches=max_matches, max_requests=max_requests)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return summary.__dict__
