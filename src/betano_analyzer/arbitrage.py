@@ -9,7 +9,7 @@ from .db import connect
 from .peru_bookmakers import PERU_BOOKMAKER_CANDIDATES, PERU_BOOKMAKER_REGISTRY, SUREBET_EXTRA_BOOKMAKERS
 
 PERU_LEAGUE_KEYWORDS = ("liga 1", "liga 2", "liga 3", "liga femenina", "liga femenina peru", "copa peru", "copa perú", "primera division peru", "primera división peru", "segunda division peru", "segunda división peru", "liga peruana", "torneo peruano")
-TARGET_PROFITS = (250, 500, 1000, 3000)
+TARGET_PROFITS = (250, 500, 1000, 3000, 5000)
 
 @dataclass(frozen=True)
 class Arbitrage:
@@ -105,7 +105,7 @@ def calculate_stakes(outcomes: dict[str, dict[str, object]], total_stake: float)
 
 
 def build_target_profit_plans(outcomes: dict[str, dict[str, object]], targets: tuple[int, ...] = TARGET_PROFITS) -> dict[int, dict[str, object]]:
-    """Build the four requested target-profit plans only."""
+    """Build the five requested target-profit plans."""
     return {target: _integer_stake_plan(outcomes, target) for target in targets}
 
 
