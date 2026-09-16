@@ -41,8 +41,8 @@ def test_connect_validates_then_keeps_key_in_session(tmp_path,monkeypatch):
     accounts_module.clear_session()
     accounts_file=tmp_path/'provider_accounts.json'
     monkeypatch.setattr(accounts_module,'ACCOUNTS_FILE',accounts_file);monkeypatch.setattr(accounts_module,'DATA_DIR',tmp_path)
-    async def fake_check(api_key,*args):
-        assert api_key=='valid-key-123';return {'valid':True,'usage':{'display':'10 / 500'},'plan':'test'}
+    async def fake_check(provider,api_key,*args):
+        assert provider=='oddspapi';assert api_key=='valid-key-123';return {'valid':True,'usage':{'display':'10 / 500'},'plan':'test'}
     monkeypatch.setattr(accounts_api,'check_provider',fake_check)
     response=client.post('/api/v1/provider-accounts/connect',json={'provider':'oddspapi','label':'Panel','email':'','api_key':'valid-key-123'})
     assert response.status_code==200, response.text
