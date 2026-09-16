@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from .provider_accounts import activate_account, active_account, check_provider, list_accounts, remove_account, save_account, session_key
@@ -16,10 +17,15 @@ async def status():
     account=active_account()
     if not account: return {"connected":False,"account":None}
     key=session_key(account["provider"])
+    base={"connected":True,"account":account,"usage":{},"plan":None,"subscription_status":None,"valid_from":None,"valid_until":None}
+    if not key: return {"connected":False,"account":account,"error":"API Key no disponible en esta sesión"}
     try:
-        checked=await check_provider(account["provider"],key,account["base_url"],account["auth_location"],account["auth_name"],account["test_path"])
-    except Exception as exc: return {"connected":False,"account":account,"error":str(exc)}
-    return {"connected":True,"account":account,"usage":checked.get("usage",{}),"plan":checked.get("plan"),"subscription_status":checked.get("subscription_status"),"valid_from":checked.get("valid_from"),"valid_until":checked.get("valid_until")}
+        checked=await asyncio.wait_for(check_provider(account["provider"],key,account["base_url"],account["auth_location"],account["auth_name"],account["test_path"]),timeout=8.0)
+        base.update({"usage":checked.get("usage",{}),"plan":checked.get("plan"),"subscription_status":checked.get("subscription_status"),"valid_from":checked.get("valid_from"),"valid_until":checked.get("valid_until")})
+        return base
+    except Exception as exc:
+        base["verification_error"]=str(exc)
+        return base
 
 @router.post("/check")
 async def check_account(data:ProviderAccountInput):
