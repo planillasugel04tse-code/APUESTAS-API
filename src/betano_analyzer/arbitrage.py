@@ -120,14 +120,7 @@ def _market_base(market: object) -> str:
     for suffix in ("_ft", "_1h", "_2h", ":ft", ":1h", ":2h"):
         if text.endswith(suffix):
             return text[:-len(suffix)]
-    aliases = {
-        "moneyline": "1x2", "match_winner": "1x2", "win_draw_win": "1x2", "1x2": "1x2",
-        "double_chance": "double_chance", "dc": "double_chance",
-        "dnb": "dnb", "draw_no_bet": "dnb", "ah": "asian_handicap", "asian_handicap": "asian_handicap",
-        "european_handicap": "european_handicap", "total": "total", "goals": "total", "over_under": "total",
-        "btts": "btts", "both_teams_to_score": "btts", "team_total": "team_total",
-        "corners": "corners", "cards": "cards", "spread": "asian_handicap", "handicap": "asian_handicap",
-    }
+    aliases = {"moneyline": "1x2", "match_winner": "1x2", "win_draw_win": "1x2", "1x2": "1x2", "double_chance": "double_chance", "dc": "double_chance", "dnb": "dnb", "draw_no_bet": "dnb", "ah": "asian_handicap", "asian_handicap": "asian_handicap", "european_handicap": "european_handicap", "total": "total", "goals": "total", "over_under": "total", "btts": "btts", "both_teams_to_score": "btts", "team_total": "team_total", "corners": "corners", "cards": "cards", "spread": "asian_handicap", "handicap": "asian_handicap"}
     return aliases.get(text, text)
 
 
@@ -226,18 +219,17 @@ def _as_line(value: object) -> float | None:
 
 def _asian_return(line: float, side: str, result: str, odds: float) -> float:
     handicap = line if side == "home" else -line
+    doubled = handicap * 2
+    if abs(doubled - round(doubled)) > 1e-9:
+        lower = math.floor(handicap * 2) / 2
+        upper = math.ceil(handicap * 2) / 2
+        return (_asian_return(lower if side == "home" else -lower, side, result, odds) + _asian_return(upper if side == "home" else -upper, side, result, odds)) / 2
     diff = {"home": 1.0, "draw": 0.0, "away": -1.0}[result]
     adjusted = diff + handicap
     if adjusted > 1e-9:
         return odds
     if abs(adjusted) <= 1e-9:
         return 1.0
-    # Quarter lines split the stake across the adjacent half-lines.
-    doubled = handicap * 2
-    if abs(doubled - round(doubled)) > 1e-9:
-        lower = math.floor(handicap * 2) / 2
-        upper = math.ceil(handicap * 2) / 2
-        return (_asian_return(lower if side == "home" else -lower, side, result, odds) + _asian_return(upper if side == "home" else -upper, side, result, odds)) / 2
     return 0.0
 
 
@@ -268,7 +260,7 @@ def _solve_coverage(vectors: list[tuple[float, ...]]) -> tuple[float, list[float
         return None
     states = len(vectors[0])
     n = len(vectors)
-    if any(len(vector) != states for vector in vectors):
+    if any(len(vector) != states for vector in vectors) or n != states:
         return None
     best = None
     for active in itertools.combinations(range(states), n):
@@ -350,7 +342,9 @@ def find_arbitrage(limit: int = 100, *, live: bool = False, match_id: int | None
             continue
         key = (row["match_id"], str(row["market"]).lower(), row["line"], str(row["bookmaker"]).lower(), _selection_key(row["selection"]))
         current = latest.get(key)
-        if current is None or (_captured_at(row["captured_at"]) or datetime.min.replace(tzinfo=timezone.utc)) > (_captured_at(current["captured_at"]) or datetime.min.replace(tzinfo=timezone.utc)):
+        row_time = _captured_at(row["captured_at"])
+        current_time = _captured_at(current["captured_at"]) if current else None
+        if current is None or (row_time is not None and (current_time is None or row_time > current_time)):
             latest[key] = row
 
     by_match = defaultdict(list)
@@ -360,61 +354,58 @@ def find_arbitrage(limit: int = 100, *, live: bool = False, match_id: int | None
     result: list[Arbitrage] = []
     seen = set()
     for current_match_id, match_rows in by_match.items():
-        candidates = []
         prepared = []
         for row in _candidate_rows_for_match(match_rows):
             vector = _settlement_vector(row["market"], row["selection"], row["line"], float(row["odds"]))
             if vector is not None:
                 prepared.append({"row": row, "vector": vector})
         for size in (2, 3, 4):
-            candidates.extend(itertools.combinations(prepared, size))
-        for combo in candidates:
-            rows_combo = [item["row"] for item in combo]
-            vectors = [item["vector"] for item in combo]
-            if len({len(v) for v in vectors}) != 1 or len({str(r["bookmaker"]).lower() for r in rows_combo}) < 2:
-                continue
-            # Do not cross incompatible two-state BTTS with three-state result markets.
-            if len(vectors[0]) not in {2, 3}:
-                continue
-            bookmakers = [str(row["bookmaker"]) for row in rows_combo]
-            classes = {classify_bookmaker(name) for name in bookmakers}
-            if "UNKNOWN" in classes:
-                continue
-            if normalized_scope == "peru" and classes != {"PERU"}:
-                continue
-            if normalized_scope == "world" and classes not in ({"PERU", "INTERNATIONAL"}, {"INTERNATIONAL"}):
-                continue
-            plan = _coverage_stake_plan([{"vector": vector} for vector in vectors], total_stake)
-            if not plan:
-                continue
-            # Reject a middle disguised as an arb: every settlement state must have the same
-            # positive floor, which _solve_coverage enforces.
-            identity = (current_match_id, tuple(sorted((str(row["bookmaker"]).lower(), _market_base(row["market"]), _selection_key(row["selection"]), row["line"], round(float(row["odds"]), 3)) for row in rows_combo)))
-            if identity in seen:
-                continue
-            seen.add(identity)
-            competition = rows_combo[0]["competition"] or ""
-            outcomes = {}
-            for index, row in enumerate(rows_combo):
-                outcomes[str(index)] = {"selection": _selection_key(row["selection"]), "market": _market_base(row["market"]), "line": row["line"], "bookmaker": row["bookmaker"], "odds": float(row["odds"]), "classification": classify_bookmaker(row["bookmaker"])}
-            result.append(Arbitrage(
-                match_id=current_match_id,
-                match=f"{rows_combo[0]['home_team']} vs {rows_combo[0]['away_team']}",
-                market=" + ".join(sorted({_market_base(row["market"]) for row in rows_combo})),
-                line=rows_combo[0]["line"] if len({row["line"] for row in rows_combo}) == 1 else None,
-                outcomes=outcomes,
-                implied_sum=float(plan["implied_sum"]),
-                profit_margin=float(plan["roi_percent"]) / 100.0,
-                mode="live" if live else "pre_match",
-                competition=competition,
-                scope="peru" if normalized_scope == "peru" else _scope_for_competition(competition),
-                bookmaker_mix=" + ".join(sorted(classes)),
-                total_stake=int(round(float(plan["total_stake"]))) if total_stake else None,
-                total_return=int(round(float(plan["total_return"]))) if total_stake else None,
-                guaranteed_profit=int(round(float(plan["guaranteed_profit"]))) if total_stake else None,
-                roi_percent=float(plan["roi_percent"]) if total_stake else None,
-                target_profits=None,
-            ))
+            for combo in itertools.combinations(prepared, size):
+                rows_combo = [item["row"] for item in combo]
+                vectors = [item["vector"] for item in combo]
+                if len({len(v) for v in vectors}) != 1 or len(vectors[0]) != size:
+                    continue
+                bookmakers = [str(row["bookmaker"]) for row in rows_combo]
+                if len({name.lower() for name in bookmakers}) < 2:
+                    continue
+                classes = {classify_bookmaker(name) for name in bookmakers}
+                if "UNKNOWN" in classes:
+                    continue
+                if normalized_scope == "peru" and classes != {"PERU"}:
+                    continue
+                if normalized_scope == "world" and classes not in ({"PERU", "INTERNATIONAL"}, {"INTERNATIONAL"}):
+                    continue
+                plan = _coverage_stake_plan([{"vector": vector} for vector in vectors], total_stake)
+                if not plan:
+                    continue
+                identity = (current_match_id, tuple(sorted((str(row["bookmaker"]).lower(), _market_base(row["market"]), _selection_key(row["selection"]), row["line"], round(float(row["odds"]), 3)) for row in rows_combo)))
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                competition = rows_combo[0]["competition"] or ""
+                outcomes = {str(i): {"selection": _selection_key(row["selection"]), "market": _market_base(row["market"]), "line": row["line"], "bookmaker": row["bookmaker"], "odds": float(row["odds"]), "classification": classify_bookmaker(row["bookmaker"])} for i, row in enumerate(rows_combo)}
+                same_market = len({_market_base(row["market"]) for row in rows_combo}) == 1
+                market_label = rows_combo[0]["market"] if same_market else " + ".join(sorted({_market_base(row["market"]) for row in rows_combo}))
+                result.append(Arbitrage(
+                    match_id=current_match_id,
+                    match=f"{rows_combo[0]['home_team']} vs {rows_combo[0]['away_team']}",
+                    market=market_label,
+                    line=rows_combo[0]["line"] if len({row["line"] for row in rows_combo}) == 1 else None,
+                    outcomes=outcomes,
+                    implied_sum=float(plan["implied_sum"]),
+                    profit_margin=float(plan["roi_percent"]) / 100.0,
+                    mode="live" if live else "pre_match",
+                    competition=competition,
+                    scope="peru" if normalized_scope == "peru" else _scope_for_competition(competition),
+                    bookmaker_mix=" + ".join(sorted(classes)),
+                    total_stake=int(round(float(plan["total_stake"]))) if total_stake else None,
+                    total_return=int(round(float(plan["total_return"]))) if total_stake else None,
+                    guaranteed_profit=int(round(float(plan["guaranteed_profit"]))) if total_stake else None,
+                    roi_percent=float(plan["roi_percent"]) if total_stake else None,
+                    target_profits=None,
+                ))
+                if len(result) >= limit:
+                    break
             if len(result) >= limit:
                 break
         if len(result) >= limit:
