@@ -7,7 +7,7 @@ from .arbitrage_api import router as arbitrage_router
 from .bookmakers_api import router as bookmakers_router
 from .bookmakers_panel import bookmakers_panel_page
 from .control_panel_provider_patch import control_panel_with_provider_accounts
-from .db import initialize
+from .db import initialize, connect
 from .health_api import router as health_router
 from .model_api import router as model_router
 from .oddspapi_api import router as oddspapi_router
@@ -27,9 +27,22 @@ from .tipster_panel import tipster_panel_page
 from .web_ui_fixed import dashboard_fixed, surebet_page
 from .branding import apply_product_branding
 
+
+def _purge_test_arbitrage_data() -> None:
+    """Remove rows created by the arbitrage test fixture from the runtime DB.
+
+    Test fixtures use the ``test-arb-`` external-id prefix. They must never
+    appear as production SureBet opportunities in the running application.
+    """
+    with connect() as db:
+        db.execute("DELETE FROM odds WHERE match_id IN (SELECT id FROM matches WHERE external_id LIKE 'test-arb-%')")
+        db.execute("DELETE FROM matches WHERE external_id LIKE 'test-arb-%'")
+        db.commit()
+
+
 @asynccontextmanager
 async def lifespan(app:FastAPI):
-    clear_session(); initialize(); yield; clear_session()
+    clear_session(); initialize(); _purge_test_arbitrage_data(); yield; clear_session()
 
 app=FastAPI(title='ANALISYS BETSTOTAL',version='0.1.0',description='Plataforma de análisis de cuotas, value bets, surebets, tipsters y señales deportivas.',lifespan=lifespan)
 
