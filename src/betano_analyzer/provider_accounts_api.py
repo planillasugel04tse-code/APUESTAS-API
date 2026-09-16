@@ -8,7 +8,7 @@ from .oddspapi_key_store import delete_api_key, key_configured, load_api_key, ma
 router=APIRouter(prefix="/api/v1/provider-accounts",tags=["provider-accounts"])
 
 class ProviderAccountInput(BaseModel):
-    provider:str="oddspapi"; label:str=Field(default="",max_length=100); email:str=Field(default="",max_length=200); api_key:str=Field(default="",max_length=500); account_id:str|None=Field(default=None,max_length=100); base_url:str|None=Field(default=None,max_length=500); auth_location:str=Field(default="query",pattern="^(query|header)$"); auth_name:str=Field(default="apiKey",max_length=100); test_path:str=Field(default="/account",max_length=200); remember_key:bool=False
+    provider:str="oddspapi"; label:str=Field(default="",max_length=100); email:str=Field(default="",max_length=200); api_key:str=Field(default="",max_length=500); account_id:str|None=Field(default=None,max_length=100); base_url:str|None=Field(default=None,max_length=500); auth_location:str=Field(default="query",pattern="^(query|header)$"); auth_name:str=Field(default="apiKey",max_length=100); test_path:str=Field(default="/account",max_length=200); remember_key:bool=True
 
 @router.get("")
 def accounts(): return {"accounts":list_accounts(),"saved_key":key_configured(),"saved_key_masked":masked_api_key()}
@@ -41,8 +41,9 @@ async def connect_account(data:ProviderAccountInput):
     except Exception as exc: raise HTTPException(status_code=502,detail=f"No se pudo comprobar el proveedor: {exc}") from exc
     try:
         saved=save_account(data.provider,data.label,data.email,data.api_key,data.account_id,data.base_url,data.auth_location,data.auth_name,data.test_path); account=activate_account(saved["id"])
-        if data.remember_key and data.provider.lower()=="oddspapi": save_api_key(data.api_key)
-        elif data.provider.lower()=="oddspapi" and not data.remember_key: delete_api_key()
+        if data.provider.lower()=="oddspapi":
+            if data.remember_key: save_api_key(data.api_key)
+            else: delete_api_key()
     except ValueError as exc: raise HTTPException(status_code=400,detail=str(exc)) from exc
     return {"connected":True,"account":account,"usage":checked.get("usage",{}),"plan":checked.get("plan"),"subscription_status":checked.get("subscription_status"),"valid_from":checked.get("valid_from"),"valid_until":checked.get("valid_until"),"saved_key":key_configured(),"saved_key_masked":masked_api_key()}
 
