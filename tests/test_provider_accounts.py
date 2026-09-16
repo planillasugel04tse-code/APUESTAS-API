@@ -45,7 +45,7 @@ def test_connect_validates_then_keeps_key_in_session(tmp_path,monkeypatch):
         assert api_key=='valid-key-123';return {'valid':True,'usage':{'display':'10 / 500'},'plan':'test'}
     monkeypatch.setattr(accounts_api,'check_provider',fake_check)
     response=client.post('/api/v1/provider-accounts/connect',json={'provider':'oddspapi','label':'Panel','email':'','api_key':'valid-key-123'})
-    assert response.status_code==200
+    assert response.status_code==200, response.text
     payload=response.json()
     assert payload['connected'] is True and payload['account']['active'] is True
     assert payload['account']['api_key_masked']!='valid-key-123'
